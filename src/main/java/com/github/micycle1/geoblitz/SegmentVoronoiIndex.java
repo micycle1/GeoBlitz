@@ -9,7 +9,6 @@ import java.util.Objects;
 
 import org.locationtech.jts.algorithm.Distance;
 import org.locationtech.jts.algorithm.locate.PointOnGeometryLocator;
-import org.locationtech.jts.algorithm.locate.YStripesPointInAreaLocator;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.Envelope;
 import org.locationtech.jts.geom.Geometry;
