@@ -16,6 +16,7 @@ import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.LineSegment;
 import org.locationtech.jts.geom.LineString;
 import org.locationtech.jts.geom.Location;
+import org.locationtech.jts.geom.MultiPolygon;
 import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.Polygon;
 import org.locationtech.jts.operation.overlayng.CoverageUnion;
@@ -35,6 +36,19 @@ public class SegmentVoronoiIndex {
 	private final Envelope clipEnvelope;
 	private final List<LineSegment> segments;
 	private final HHPRtree<CellRecord> cellIndex; // indexes Voronoi cells
+	
+	public SegmentVoronoiIndex(Polygon polygon, double sampleSpacing) {
+		this.gf = new GeometryFactory();
+		this.clipEnvelope = polygon.getEnvelopeInternal();
+		this.clipEnvelope.expandBy(polygon.getLength()/4);
+		var segments = segmentsFromPolygon(polygon, false);
+		this.segments = new ArrayList<>(segments);
+		this.cellIndex = new HHPRtree<>();
+
+		build(sampleSpacing);
+		this.cellIndex.build();
+		
+	}
 
 	public SegmentVoronoiIndex(Polygon polygon, Envelope clipEnvelope, double sampleSpacing) {
 		this(segmentsFromPolygon(polygon, false), clipEnvelope, sampleSpacing);
@@ -53,7 +67,7 @@ public class SegmentVoronoiIndex {
 	 */
 	public SegmentVoronoiIndex(List<LineSegment> segments, Envelope clipEnvelope, double sampleSpacing) {
 		this.gf = new GeometryFactory();
-		this.clipEnvelope = new Envelope(clipEnvelope);
+		this.clipEnvelope = clipEnvelope == null ? null : new Envelope(clipEnvelope);
 		this.segments = new ArrayList<>(segments);
 		this.cellIndex = new HHPRtree<>();
 
@@ -173,7 +187,11 @@ public class SegmentVoronoiIndex {
 				return null;
 			}
 
-			Polygon single = (Polygon) CoverageUnion.union(gf.buildGeometry(cells));
+			var union = CoverageUnion.union(gf.buildGeometry(cells));
+			if (union instanceof MultiPolygon) {
+				union = union.getGeometryN(0); // TODO!!!
+			}
+			Polygon single = (Polygon) union;
 			if (single == null || single.isEmpty()) {
 				return null;
 			}

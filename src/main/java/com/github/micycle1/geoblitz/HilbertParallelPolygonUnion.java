@@ -7,7 +7,6 @@ import java.util.stream.IntStream;
 
 import org.locationtech.jts.geom.Envelope;
 import org.locationtech.jts.geom.Geometry;
-import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Polygon;
 import org.locationtech.jts.geom.Polygonal;
 import org.locationtech.jts.geom.util.PolygonExtracter;
@@ -15,22 +14,23 @@ import org.locationtech.jts.index.hprtree.HilbertEncoder;
 import org.locationtech.jts.shape.fractal.HilbertCode;
 
 /**
+ * Polygon union.
+ * 
  * @author Michael Carleton
  */
-public class OmniUnion {
+public class HilbertParallelPolygonUnion {
 
-	private GeometryFactory factory;
-
-	public OmniUnion() {
+	private HilbertParallelPolygonUnion() {
 	}
 
 	/**
 	 * Much faster CascadedPolygonUnion (similar idea, but faster sorting and
 	 * parallel union).
 	 */
-	public Geometry fastUnion(List<Geometry> geoms) {
+	public static Geometry union(List<Geometry> geoms) {
 		int n = geoms.size();
 		sort(geoms, HilbertCode.level(n)); // sort according to center point of MBR
+		var factory = geoms.get(0).getFactory();
 
 		return geoms.parallelStream().reduce((g1, g2) -> {
 			var result = g1.union(g2);
@@ -53,7 +53,7 @@ public class OmniUnion {
 	 * @param geoms the list of geometries to sort
 	 * @param level the resolution level for Hilbert curve encoding
 	 */
-	private static void sort(List<Geometry> geoms, int level) {
+	private static void sort(List<? extends Geometry> geoms, int level) {
 		int n = geoms.size();
 		if (n < 2)
 			return;

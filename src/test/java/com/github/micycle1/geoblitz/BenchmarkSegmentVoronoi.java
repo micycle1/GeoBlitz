@@ -1,12 +1,13 @@
 package com.github.micycle1.geoblitz;
 
-import org.locationtech.jts.algorithm.locate.IndexedPointInAreaLocator;
 import java.util.concurrent.TimeUnit;
 
 import java.util.SplittableRandom;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.Envelope;
+import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.Polygon;
+import org.locationtech.jts.operation.distance.IndexedFacetDistance;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -28,12 +29,12 @@ import org.openjdk.jmh.annotations.Mode;
 @Warmup(iterations = 5, time = 1)
 @Measurement(iterations = 5, time = 1)
 @Fork(value = 2, jvmArgsAppend = { "-Xms1g", "-Xmx1g", "-XX:+AlwaysPreTouch" })
-public class BenchmarkYStripes {
+public class BenchmarkSegmentVoronoi {
 
 	private Polygon polygon;
 	private Coordinate[] testPoints;
-	private YStripesPointInAreaLocator yStripesLocator;
-	private IndexedPointInAreaLocator indexedLocator;
+	private SegmentVoronoiIndex svi;
+	private IndexedFacetDistance ifd;
 
 	private static final int numPoints = 50_000;
 
@@ -49,8 +50,8 @@ public class BenchmarkYStripes {
 		polygon = (Polygon) TestGeomMaker.make(n, seed);
 
 		// Build locators here so benchmarks measure locate(), not construction
-		yStripesLocator = new YStripesPointInAreaLocator(polygon);
-		indexedLocator = new IndexedPointInAreaLocator(polygon);
+		svi = new SegmentVoronoiIndex(polygon, new Envelope(0, 1000, 0, 1000), 1);
+		ifd = new IndexedFacetDistance(polygon);
 
 		// Generate reproducible test points near the polygon's envelope
 		testPoints = new Coordinate[numPoints];
@@ -74,23 +75,26 @@ public class BenchmarkYStripes {
 
 		// Ensure any lazy initialization in locators happens during warmup/setup, not
 		// measurement
-		yStripesLocator.locate(testPoints[0]);
-		indexedLocator.locate(testPoints[0]);
+		var c = new Coordinate(0, 0);
+		Point p = polygon.getFactory().createPoint(c);
+		svi.distanceToNearestSegment(c);
+		ifd.distance(p);
 	}
 
 	@Benchmark
 	@OperationsPerInvocation(numPoints)
-	public void testYStripesLocator(Blackhole bh) {
+	public void testSegmentVoronoiIndex(Blackhole bh) {
 		for (Coordinate c : testPoints) {
-			bh.consume(yStripesLocator.locate(c));
+			bh.consume(svi.distanceToNearestSegment(c));
 		}
 	}
 
 	@Benchmark
 	@OperationsPerInvocation(numPoints)
-	public void testIndexedLocator(Blackhole bh) {
+	public void testIndexedFacetDistance(Blackhole bh) {
 		for (Coordinate c : testPoints) {
-			bh.consume(indexedLocator.locate(c));
+			Point p = polygon.getFactory().createPoint(c);
+			bh.consume(ifd.distance(p));
 		}
 	}
 }

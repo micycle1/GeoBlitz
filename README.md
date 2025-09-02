@@ -1,3 +1,5 @@
+[![](https://jitpack.io/v/micycle1/GeoBlitz.svg)](https://jitpack.io/#micycle1/GeoBlitz)
+
 # GeoBlitz
 
 GeoBlitz is an experimental collection of very fast, JTS-inspired spatial indexes and geometry functionality.
@@ -21,3 +23,7 @@ GeoBlitz is an experimental collection of very fast, JTS-inspired spatial indexe
 | `SegmentVoronoiIndex` | `IndexedFacetDistance` | Nearest line segment to a coordinate / distance to a polygon | Fast spatial index for approximate nearest-segment queries using a Voronoi-based partitioning of the plane. O(log n) average query. Note: approximates true nearest-segment queries by sampling; accuracy depends on sample spacing. | ~4x |  |
 | `OmniUnion` | `CascadedPolygonUnion` | Union of many polygons | Faster union of many polygons by using a spatial index to find likely intersecting polygons. | TBD |  |
 | `ConvexHull` | `ConvexHull` | Convex hull of geometry | TBD |  |
+
+### Benchmarks
+
+Include `jmh:benchmark` as a Maven goal to run the benchmarks.
