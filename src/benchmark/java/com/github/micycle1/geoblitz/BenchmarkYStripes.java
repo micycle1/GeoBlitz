@@ -1,17 +1,19 @@
 package com.github.micycle1.geoblitz;
 
-import org.locationtech.jts.algorithm.locate.IndexedPointInAreaLocator;
+import java.util.SplittableRandom;
 import java.util.concurrent.TimeUnit;
 
-import java.util.SplittableRandom;
+import org.locationtech.jts.algorithm.locate.IndexedPointInAreaLocator;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.Envelope;
+import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Polygon;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
 import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Measurement;
+import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OperationsPerInvocation;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
 import org.openjdk.jmh.annotations.Param;
@@ -20,17 +22,17 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
-import org.openjdk.jmh.annotations.Mode;
 
 @State(Scope.Benchmark)
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 @Warmup(iterations = 5, time = 1)
 @Measurement(iterations = 5, time = 1)
-@Fork(value = 2, jvmArgsAppend = { "-Xms1g", "-Xmx1g", "-XX:+AlwaysPreTouch" })
+@Fork(value = 1, jvmArgsAppend = { "-Xms1g", "-Xmx1g", "-XX:+AlwaysPreTouch" })
 public class BenchmarkYStripes {
 
 	private Polygon polygon;
+	private Polygon omniPolygon;
 	private Coordinate[] testPoints;
 	private YStripesPointInAreaLocator yStripesLocator;
 	private IndexedPointInAreaLocator indexedLocator;
@@ -46,7 +48,10 @@ public class BenchmarkYStripes {
 		final long seed = 42L;
 
 		// Build test polygon once per trial (per @Param n)
-		polygon = (Polygon) TestGeomMaker.make(n, seed);
+		polygon = (Polygon) GeomMaker.make(n, seed);
+//		omniPolygon = ;
+		// TODO test
+		var q = GeometryFactory.toPolygonArray(GeomMaker.makeRandomBufferedPoints(500, 5, 8, 0, new Envelope(0, 1000, 0, 1000)));
 
 		// Build locators here so benchmarks measure locate(), not construction
 		yStripesLocator = new YStripesPointInAreaLocator(polygon);

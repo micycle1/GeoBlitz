@@ -14,9 +14,32 @@ import org.locationtech.jts.index.hprtree.HilbertEncoder;
 import org.locationtech.jts.shape.fractal.HilbertCode;
 
 /**
- * Polygon union.
- * 
+ * High-performance polygon union built on Hilbert-ordered batching and parallel
+ * reduction.
+ * <p>
+ * This utility provides a faster alternative to JTS's
+ * {@code CascadedPolygonUnion} for large collections by:
+ * <ul>
+ * <li>sorting inputs in-place by a Hilbert space-filling-curve key derived from
+ * their envelopes, improving spatial locality of subsequent unions; and</li>
+ * <li>performing the union as a parallel reduction using Java streams.</li>
+ * </ul>
+ * The algorithm is intended for polygonal inputs (Polygon or MultiPolygon). If
+ * intermediate union results contain non-polygonal artifacts (e.g., due to
+ * precision effects), those are discarded and only polygonal components are
+ * returned (as a Polygon if one component remains, otherwise as a
+ * MultiPolygon).
+ * <p>
+ * Notes:
+ * <ul>
+ * <li>The input list is reordered in-place.</li>
+ * <li>The list must be non-empty; the result {@code GeometryFactory} is taken
+ * from the first element.</li>
+ * </ul>
+ *
  * @author Michael Carleton
+ * @see org.locationtech.jts.operation.union.CascadedPolygonUnion
+ *      CascadedPolygonUnion
  */
 public class HilbertParallelPolygonUnion {
 
@@ -24,8 +47,49 @@ public class HilbertParallelPolygonUnion {
 	}
 
 	/**
-	 * Much faster CascadedPolygonUnion (similar idea, but faster sorting and
-	 * parallel union).
+	 * Computes the union of the provided geometry using Hilbert-order sorting and a
+	 * parallel reduction.
+	 * <p>
+	 * The input geometries are first sorted in-place by a Hilbert curve key
+	 * computed from each geometry's envelope to cluster nearby geometries. The
+	 * union is then evaluated in parallel.
+	 * <p>
+	 * Any non-polygonal components produced during union are discarded, and the
+	 * returned geometry is guaranteed to be polygonal:
+	 * <ul>
+	 * <li>a {@code Polygon} if the result contains a single polygon, or</li>
+	 * <li>a {@code MultiPolygon} if multiple polygons remain.</li>
+	 * </ul>
+	 * The result is built using the {@code GeometryFactory} of the first input
+	 * geometry.
+	 *
+	 * @param geom a geometry (intended for Polygon collection or MultiPolygon)
+	 * @return a polygonal geometry representing the union (Polygon or MultiPolygon)
+	 */
+	public static Geometry union(Geometry geom) {
+		return union(PolygonExtracter.getPolygons(geom));
+	}
+
+	/**
+	 * Computes the union of the provided geometries using Hilbert-order sorting and
+	 * a parallel reduction.
+	 * <p>
+	 * The input list is first sorted in-place by a Hilbert curve key computed from
+	 * each geometry's envelope to cluster nearby geometries. The union is then
+	 * evaluated in parallel.
+	 * <p>
+	 * Any non-polygonal components produced during union are discarded, and the
+	 * returned geometry is guaranteed to be polygonal:
+	 * <ul>
+	 * <li>a {@code Polygon} if the result contains a single polygon, or</li>
+	 * <li>a {@code MultiPolygon} if multiple polygons remain.</li>
+	 * </ul>
+	 * The result is built using the {@code GeometryFactory} of the first input
+	 * geometry.
+	 *
+	 * @param geoms a non-null, non-empty list of geometries (intended for Polygon
+	 *              or MultiPolygon)
+	 * @return a polygonal geometry representing the union (Polygon or MultiPolygon)
 	 */
 	public static Geometry union(List<Geometry> geoms) {
 		int n = geoms.size();

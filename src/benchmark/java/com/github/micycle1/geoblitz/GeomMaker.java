@@ -1,13 +1,18 @@
 package com.github.micycle1.geoblitz;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.SplittableRandom;
 
 import org.locationtech.jts.algorithm.hull.ConcaveHull;
 import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.Envelope;
 import org.locationtech.jts.geom.Geometry;
 import org.locationtech.jts.geom.GeometryFactory;
+import org.locationtech.jts.geom.Point;
+import org.locationtech.jts.geom.Polygon;
 
-class TestGeomMaker {
+class GeomMaker {
 
 	private static final GeometryFactory FACTORY = new GeometryFactory();
 
@@ -36,6 +41,27 @@ class TestGeomMaker {
 	        points[i] = new Coordinate(x, y);
 	    }
 	    return points;
+	}
+
+	static List<Polygon> makeRandomBufferedPoints(int count, double r, int qSegs, long seed, Envelope env) {
+		SplittableRandom rnd = new SplittableRandom(seed);
+		GeometryFactory gf = new GeometryFactory();
+
+		double minX = env.getMinX();
+		double maxX = env.getMaxX();
+		double minY = env.getMinY();
+		double maxY = env.getMaxY();
+
+		List<Polygon> out = new ArrayList<>(count);
+		for (int i = 0; i < count; i++) {
+			double x = rnd.nextDouble(minX, maxX);
+			double y = rnd.nextDouble(minY, maxY);
+			Point p = gf.createPoint(new Coordinate(x, y));
+			// buffer yields a valid polygonal disk; ensures polygonal input
+			Polygon poly = (Polygon) p.buffer(r, qSegs);
+			out.add(poly);
+		}
+		return out;
 	}
 
 }

@@ -2,17 +2,12 @@ package com.github.micycle1.geoblitz;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.SplittableRandom;
 import java.util.concurrent.TimeUnit;
 
-import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.Envelope;
 import org.locationtech.jts.geom.Geometry;
 import org.locationtech.jts.geom.GeometryFactory;
-import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.Polygon;
-import org.locationtech.jts.geom.PrecisionModel;
-import org.locationtech.jts.operation.overlayng.UnaryUnionNG;
 import org.locationtech.jts.operation.union.CascadedPolygonUnion;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -50,21 +45,20 @@ public class BenchmarkHilbertParallelPolygonUnion {
 	@Param({ "10.0" })
 	public double radius;
 
-	// buffer quadrant segments (controls polygon complexity: edges ≈ 4 * quadSegs)
 //	@Param({ "8", "16" })
 	public int quadSegs = 16;
 
 	@Setup(Level.Trial)
 	public void setup() {
 		gf = new GeometryFactory();
-		polygons = makeRandomBufferedPoints(n, radius, quadSegs, seed, extent);
+		polygons = GeomMaker.makeRandomBufferedPoints(n, radius, quadSegs, seed, extent);
 
 		// Trigger class loading/JIT outside measurement
 		List<Geometry> warmupSmall = new ArrayList<>(polygons.subList(0, Math.min(polygons.size(), 16)));
 		CascadedPolygonUnion.union(warmupSmall);
 		HilbertParallelPolygonUnion.union(new ArrayList<>(warmupSmall));
 	}
-	
+
 	// TODO node all lines, polygonise, coverage union (works on contiguous blobs only?)
 
 	@Benchmark
@@ -82,7 +76,7 @@ public class BenchmarkHilbertParallelPolygonUnion {
 		Geometry result = HilbertParallelPolygonUnion.union(input);
 		bh.consume(result);
 	}
-	
+
 //	@Benchmark
 //	public void testNary(Blackhole bh) {
 //		// OmniUnion sorts in-place; give it a fresh list each time
@@ -90,25 +84,4 @@ public class BenchmarkHilbertParallelPolygonUnion {
 //		Geometry result = NAryUnion.union(input, null);
 //		bh.consume(result);
 //	}
-
-	private static List<Polygon> makeRandomBufferedPoints(int count, double r, int qSegs, long seed, Envelope env) {
-		SplittableRandom rnd = new SplittableRandom(seed);
-		GeometryFactory gf = new GeometryFactory();
-
-		double minX = env.getMinX();
-		double maxX = env.getMaxX();
-		double minY = env.getMinY();
-		double maxY = env.getMaxY();
-
-		List<Polygon> out = new ArrayList<>(count);
-		for (int i = 0; i < count; i++) {
-			double x = rnd.nextDouble(minX, maxX);
-			double y = rnd.nextDouble(minY, maxY);
-			Point p = gf.createPoint(new Coordinate(x, y));
-			// buffer yields a valid polygonal disk; ensures polygonal input
-			Polygon poly = (Polygon) p.buffer(r, qSegs);
-			out.add(poly);
-		}
-		return out;
-	}
 }

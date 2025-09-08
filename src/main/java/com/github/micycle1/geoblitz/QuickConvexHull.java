@@ -3,6 +3,7 @@ package com.github.micycle1.geoblitz;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.Geometry;
 import org.locationtech.jts.geom.GeometryFactory;
+import org.locationtech.jts.geom.LinearRing;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -12,9 +13,23 @@ import java.util.List;
 /**
  * @author Michael Carleton
  */
-public class ConvexHull {
+public class QuickConvexHull {
 
-	private ConvexHull() {
+	private GeometryFactory geomFactory;
+	private Coordinate[] inputPts;
+
+	public QuickConvexHull(Geometry geometry) {
+		this(geometry.getCoordinates(), geometry.getFactory());
+	}
+
+	public QuickConvexHull(Coordinate[] pts, GeometryFactory geomFactory) {
+		inputPts = pts;
+		this.geomFactory = geomFactory;
+	}
+
+	public Geometry getConvexHull() {
+		var out = convexHull(inputPts);
+		return lineOrPolygon(out);
 	}
 
 	/*
@@ -24,13 +39,12 @@ public class ConvexHull {
 	 * degenerate case).
 	 */
 
-	public static Geometry get(Coordinate[] pts, GeometryFactory geomFactory) {
-		// -- suboptimal early uniquing - for performance testing only
-		// inputPts = UniqueCoordinateArrayFilter.filterCoordinates(pts);
-
-		var out = convexHull(pts);
-		return geomFactory.createPolygon(out);
-	}
+//	public static Geometry get(Coordinate[] pts, GeometryFactory geomFactory) {
+//		// -- suboptimal early uniquing - for performance testing only
+//		// inputPts = UniqueCoordinateArrayFilter.filterCoordinates(pts);
+//
+//
+//	}
 
 	private static Coordinate[] convexHull(Coordinate[] P) {
 		// Preprocess: Convert array to list for sorting
@@ -43,8 +57,8 @@ public class ConvexHull {
 		points.sort(new CoordinateComparator());
 
 		// Data structures
-		List<Coordinate> upper = new ArrayList<>();
-		List<Coordinate> lower = new ArrayList<>();
+		List<Coordinate> upper = new ArrayList<>(P.length / 2);
+		List<Coordinate> lower = new ArrayList<>(P.length / 2);
 
 		// Endpoints
 		Coordinate p0 = points.get(0);
@@ -107,6 +121,23 @@ public class ConvexHull {
 		// Convert the list of coordinates back to an array
 		Coordinate[] hull = new Coordinate[upper.size()];
 		return upper.toArray(hull);
+	}
+
+	/**
+	 * @param vertices the vertices of a linear ring, which may or may not be
+	 *                 flattened (i.e. vertices collinear)
+	 * @return a 2-vertex <code>LineString</code> if the vertices are collinear;
+	 *         otherwise, a <code>Polygon</code> with unnecessary (collinear)
+	 *         vertices removed
+	 */
+	private Geometry lineOrPolygon(Coordinate[] coordinates) {
+
+//	    coordinates = cleanRing(coordinates);
+		if (coordinates.length == 3) {
+			return geomFactory.createLineString(new Coordinate[] { coordinates[0], coordinates[1] });
+		}
+		LinearRing linearRing = geomFactory.createLinearRing(coordinates);
+		return geomFactory.createPolygon(linearRing);
 	}
 
 	private static class CoordinateComparator implements Comparator<Coordinate> {
