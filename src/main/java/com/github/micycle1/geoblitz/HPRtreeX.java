@@ -11,83 +11,101 @@ import org.locationtech.jts.geom.Envelope;
 import org.locationtech.jts.index.hprtree.HilbertEncoder;
 import org.locationtech.jts.util.IntArrayList;
 
-public class HHPRtree<T> {
-
-	public interface ItemVisitor<T> {
-		/**
-		 * @return true to continue visiting, false to terminate early
-		 */
-		boolean visitItem(T item);
-	}
+/**
+ * Improves the original JTS HPRTree implementation with eXtended features:
+ * <ul>
+ * <li>Generics support so the tree can store arbitrary user objects of type
+ * {@code T}.</li>
+ * <li>Support for an <em>early-exit</em> item visitor to terminate spatial
+ * queries as soon as a condition is satisfied.</li>
+ * <li>Efficient nearest-neighbor search using a best-first traversal with
+ * bounding-box pruning.</li>
+ * </ul>
+ * <p>
+ * Thread-safety notes:
+ * <ul>
+ * <li>{@link #build()} is idempotent and uses internal synchronization so it is
+ * safe to call concurrently; the index will be prepared once.</li>
+ * <li>After the index is built, read/query operations are safe (no
+ * modifications are performed). However, concurrent calls that attempt to
+ * insert after a build will throw an exception.</li>
+ * </ul>
+ *
+ * @param <T> the type of the items stored in the tree
+ */
+public class HPRtreeX<T> {
 
 	private static final int ENV_SIZE = 4;
 	private static final int HILBERT_LEVEL = 12;
 	private static final int DEFAULT_NODE_CAPACITY = 16;
 
-	private static class Item<T> {
-		private final Envelope env;
-		private final T item;
-
-		Item(Envelope env, T item) {
-			this.env = env;
-			this.item = item;
-		}
-
-		public Envelope getEnvelope() {
-			return env;
-		}
-
-		public T getItem() {
-			return item;
-		}
-	}
-
 	private List<Item<T>> itemsToLoad = new ArrayList<>();
-
 	private final int nodeCapacity;
-
 	private int numItems = 0;
-
 	private final Envelope totalExtent = new Envelope();
-
 	private int[] layerStartIndex;
-
 	private double[] nodeBounds;
-
 	private double[] itemBounds;
-
-	private Object[] itemValues;
-
+	private Object[] itemValues; // Java cannot create a generic array of T
 	private volatile boolean isBuilt = false;
 
 	// Used to support early termination during query
 	private boolean terminated = false;
 
 	/**
-	 * Creates a new index with the default node capacity.
+	 * Creates a new index using the default node capacity.
+	 *
+	 * <p>
+	 * The default node capacity is {@code DEFAULT_NODE_CAPACITY}. Newly created
+	 * trees are initially empty and buffer inserted items in memory until the tree
+	 * is built (explicitly by calling {@link #build()} or implicitly when
+	 * performing a query).
+	 * </p>
 	 */
-	public HHPRtree() {
+	public HPRtreeX() {
 		this(DEFAULT_NODE_CAPACITY);
 	}
 
 	/**
-	 * Creates a new index with the given node capacity.
-	 * 
-	 * @param nodeCapacity the node capacity to use
+	 * Creates a new index with the specified node capacity.
+	 *
+	 * @param nodeCapacity the number of children stored per internal node (controls
+	 *                     tree fanout and memory layout). Must be &gt; 0. Larger
+	 *                     values generally produce shallower trees but increase the
+	 *                     per-node scan cost.
 	 */
-	public HHPRtree(int nodeCapacity) {
+	public HPRtreeX(int nodeCapacity) {
 		this.nodeCapacity = nodeCapacity;
 	}
 
 	/**
-	 * Gets the number of items in the index.
-	 * 
-	 * @return the number of items
+	 * Returns the number of items that have been inserted into this tree.
+	 *
+	 * <p>
+	 * This count includes items that have been added but not yet bulk-loaded into
+	 * the internal arrays (i.e. before {@link #build()} is called).
+	 * </p>
+	 *
+	 * @return the number of inserted items
 	 */
 	public int size() {
 		return numItems;
 	}
 
+	/**
+	 * Inserts an item with its bounding envelope into the tree's insertion buffer.
+	 *
+	 * <p>
+	 * Items may be inserted only until the index is built. Calling this method
+	 * after {@link #build()} has been invoked will throw an
+	 * {@link IllegalStateException}.
+	 * </p>
+	 *
+	 * @param itemEnv the axis-aligned bounding envelope of the item (must not be
+	 *                {@code null})
+	 * @param item    the item to store
+	 * @throws IllegalStateException if called after the tree has been built
+	 */
 	public void insert(Envelope itemEnv, T item) {
 		if (isBuilt) {
 			throw new IllegalStateException("Cannot insert items after tree is built.");
@@ -97,6 +115,24 @@ public class HHPRtree<T> {
 		totalExtent.expandToInclude(itemEnv);
 	}
 
+	/**
+	 * Returns a list of items whose envelopes intersect the supplied search
+	 * envelope.
+	 *
+	 * <p>
+	 * The returned list contains all items that intersect {@code searchEnv}. The
+	 * order of items in the returned list follows the internal node/item ordering
+	 * (Hilbert-ordered blocks), but is not otherwise guaranteed.
+	 * </p>
+	 *
+	 * <p>
+	 * Calling this method will build the index if it has not already been built.
+	 * </p>
+	 *
+	 * @param searchEnv the query envelope
+	 * @return a list of matching items; an empty list if no items intersect
+	 *         {@code searchEnv}
+	 */
 	public List<T> query(Envelope searchEnv) {
 		build();
 
@@ -111,6 +147,25 @@ public class HHPRtree<T> {
 		return result;
 	}
 
+	/**
+	 * Visits all items whose envelopes intersect the supplied {@code searchEnv},
+	 * invoking the provided {@code visitor} for each matching item.
+	 *
+	 * <p>
+	 * Visiting order follows the internal node traversal order. The visitor may
+	 * return {@code false} to request early termination of the traversal; in that
+	 * case no further items will be visited.
+	 * </p>
+	 *
+	 * <p>
+	 * This method will build the index if it has not already been built.
+	 * </p>
+	 *
+	 * @param searchEnv the envelope to search
+	 * @param visitor   a callback invoked for each matching item; returning
+	 *                  {@code false} signals that the traversal should stop
+	 *                  immediately
+	 */
 	public void query(Envelope searchEnv, ItemVisitor<T> visitor) {
 		build();
 		if (!totalExtent.intersects(searchEnv))
@@ -200,7 +255,17 @@ public class HHPRtree<T> {
 	}
 
 	/**
-	 * Builds the index, if not already built.
+	 * Builds the internal spatial index structures from the items that have been
+	 * inserted.
+	 *
+	 * <p>
+	 * This method is idempotent and thread-safe: if multiple threads call
+	 * {@code build()} concurrently the index will be prepared only once. Building
+	 * performs sorting (Hilbert encoding) and allocates internal arrays; it can be
+	 * relatively expensive for large datasets. If the tree contains no more than
+	 * {@code nodeCapacity} items, no internal node structures are created and
+	 * queries will operate by linear scan.
+	 * </p>
 	 */
 	public void build() {
 		// skip if already built
@@ -340,9 +405,19 @@ public class HHPRtree<T> {
 	}
 
 	/**
-	 * Gets the extents of the internal index nodes
-	 * 
-	 * @return a list of the internal node extents
+	 * Returns the extents (minimum bounding rectangles) of the internal index
+	 * nodes.
+	 *
+	 * <p>
+	 * The returned array contains one {@link Envelope} per internal node in the
+	 * index. The ordering corresponds to the internal node ordering used by this
+	 * tree (i.e. the same index offsets used by queries and nearest-neighbor
+	 * traversal). Each {@link Envelope} in the returned array is a newly created
+	 * object and may be freely modified by the caller.
+	 * </p>
+	 *
+	 * @return an array of internal node envelopes, or an empty array if the index
+	 *         contains no internal nodes
 	 */
 	public Envelope[] getBounds() {
 		int numNodes = nodeBounds.length / 4;
@@ -403,19 +478,42 @@ public class HHPRtree<T> {
 		values[j] = tmpValue;
 	}
 
-	@FunctionalInterface
-	public interface DistanceToItem<T> {
-		/**
-		 * Returns the distance from the query point q to the item.
-		 */
-		double distance(Coordinate q, T item);
-	}
-
+	/**
+	 * Finds and returns the item nearest to the query point {@code q}, according to
+	 * the user-supplied distance function {@code distFn}.
+	 *
+	 * <p>
+	 * The {@link DistanceToItem} callback is used to compute the distance from the
+	 * query coordinate to a stored item. The implementation performs a best-first
+	 * traversal of the tree using bounding-box minimum-distance pruning; only items
+	 * and nodes that can beat the current best distance are explored. If the index
+	 * has no internal layers the search degenerates to a linear scan of all items.
+	 * </p>
+	 *
+	 * <p>
+	 * Notes and guarantees:
+	 * <ul>
+	 * <li>If the tree contains no items, {@code null} is returned.</li>
+	 * <li>{@code distFn.distance} should return a non-negative scalar; correctness
+	 * of pruning assumes that the function is consistent with geometric distance
+	 * ordering.</li>
+	 * <li>The returned object is the single item for which
+	 * {@code distFn.distance(q, item)} is minimal (ties broken by traversal
+	 * order).</li>
+	 * </ul>
+	 *
+	 * @param q      the query coordinate
+	 * @param distFn a callback that computes the distance between {@code q} and an
+	 *               item
+	 * @return the nearest item according to {@code distFn}, or {@code null} if the
+	 *         tree is empty
+	 */
 	@SuppressWarnings("unchecked")
 	public T nearestNeighbor(Coordinate q, DistanceToItem<T> distFn) {
 		build();
-		if (numItems == 0)
+		if (numItems == 0) {
 			return null;
+		}
 
 		final double qx = q.x, qy = q.y;
 
@@ -520,7 +618,66 @@ public class HHPRtree<T> {
 		return dx * dx + dy * dy;
 	}
 
-	// Update HEntry field name to reflect squared distance
+	/**
+	 * Functional interface used to compute the distance between a query coordinate
+	 * and an item stored in the tree.
+	 *
+	 * @param <T> item type stored in the tree
+	 */
+	@FunctionalInterface
+	public interface DistanceToItem<T> {
+		/**
+		 * Computes the scalar distance from the query point {@code q} to the supplied
+		 * {@code item}.
+		 *
+		 * <p>
+		 * Implementations should return a non-negative value. The tree uses these
+		 * distances for ranking candidates during nearest-neighbor search; for best
+		 * performance the function should be inexpensive to compute.
+		 * </p>
+		 *
+		 * @param q    the query coordinate
+		 * @param item the item whose distance to {@code q} should be computed
+		 * @return the distance from {@code q} to {@code item} (must be &gt;= 0)
+		 */
+		double distance(Coordinate q, T item);
+	}
+
+	/**
+	 * Visitor interface used by {@link #query(Envelope, ItemVisitor)} to process
+	 * items that intersect a query envelope.
+	 *
+	 * @param <T> the type of items visited
+	 */
+	public interface ItemVisitor<T> {
+		/**
+		 * Invoked for each item whose envelope intersects the current query envelope.
+		 *
+		 * @param item the item being visited
+		 * @return {@code true} to continue visiting additional items, {@code false} to
+		 *         terminate the traversal early
+		 */
+		boolean visitItem(T item);
+	}
+
+	private static class Item<T> {
+		private final Envelope env;
+		private final T item;
+
+		Item(Envelope env, T item) {
+			this.env = env;
+			this.item = item;
+		}
+
+		public Envelope getEnvelope() {
+			return env;
+		}
+
+		public T getItem() {
+			return item;
+		}
+	}
+
 	private static final class HEntry {
 		final int layerIndex;
 		final int nodeOffset; // offset in doubles within the layer (multiple of 4)

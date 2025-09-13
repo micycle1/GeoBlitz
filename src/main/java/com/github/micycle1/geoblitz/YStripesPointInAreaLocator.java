@@ -31,7 +31,7 @@ import org.locationtech.jts.index.strtree.STRtree;
 public final class YStripesPointInAreaLocator implements PointOnGeometryLocator {
 	private final Envelope env;
 	private final PointOnGeometryLocator single;
-	private final HHPRtree<PointOnGeometryLocator> tree;
+	private final HPRtreeX<PointOnGeometryLocator> tree;
 	private Envelope qEnv = new Envelope(0, 0, 0, 0);
 
 	public YStripesPointInAreaLocator(Geometry geom) {
@@ -53,7 +53,7 @@ public final class YStripesPointInAreaLocator implements PointOnGeometryLocator 
 		}
 
 		Envelope e = new Envelope();
-		HHPRtree<PointOnGeometryLocator> t = new HHPRtree<>();
+		HPRtreeX<PointOnGeometryLocator> t = new HPRtreeX<>();
 		for (Polygon p : polys) {
 			Envelope pe = p.getEnvelopeInternal();
 			e.expandToInclude(pe);

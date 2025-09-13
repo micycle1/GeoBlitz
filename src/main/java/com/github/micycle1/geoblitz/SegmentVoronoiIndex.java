@@ -35,7 +35,7 @@ public class SegmentVoronoiIndex {
 	private final GeometryFactory gf;
 	private final Envelope clipEnvelope;
 	private final List<LineSegment> segments;
-	private final HHPRtree<CellRecord> cellIndex; // indexes Voronoi cells
+	private final HPRtreeX<CellRecord> cellIndex; // indexes Voronoi cells
 	
 	public SegmentVoronoiIndex(Polygon polygon, double sampleSpacing) {
 		this.gf = new GeometryFactory();
@@ -43,7 +43,7 @@ public class SegmentVoronoiIndex {
 		this.clipEnvelope.expandBy(polygon.getLength()/4);
 		var segments = segmentsFromPolygon(polygon, false);
 		this.segments = new ArrayList<>(segments);
-		this.cellIndex = new HHPRtree<>();
+		this.cellIndex = new HPRtreeX<>();
 
 		build(sampleSpacing);
 		this.cellIndex.build();
@@ -69,7 +69,7 @@ public class SegmentVoronoiIndex {
 		this.gf = new GeometryFactory();
 		this.clipEnvelope = clipEnvelope == null ? null : new Envelope(clipEnvelope);
 		this.segments = new ArrayList<>(segments);
-		this.cellIndex = new HHPRtree<>();
+		this.cellIndex = new HPRtreeX<>();
 
 		build(sampleSpacing);
 		this.cellIndex.build();
