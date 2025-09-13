@@ -1,10 +1,12 @@
 package com.github.micycle1.geoblitz;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import java.util.Comparator;
 import java.util.PriorityQueue;
+import java.util.SplittableRandom;
 
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.Envelope;
@@ -20,6 +22,7 @@ import org.locationtech.jts.util.IntArrayList;
  * queries as soon as a condition is satisfied.</li>
  * <li>Efficient nearest-neighbor search using a best-first traversal with
  * bounding-box pruning.</li>
+ * <li>Efficient range query search.</li>
  * </ul>
  * <p>
  * Thread-safety notes:
@@ -590,6 +593,135 @@ public class HPRtreeX<T> {
 			}
 		}
 		return best;
+	}
+
+	/**
+	 * Finds and returns all items whose distance to the query point {@code q} is
+	 * less than or equal to the supplied {@code maxDistance}, according to the
+	 * user-supplied distance function {@code distFn}.
+	 *
+	 * <p>
+	 * The {@link DistanceToItem} callback is used to compute the distance from the
+	 * query coordinate to a stored item. The implementation performs a depth-first
+	 * traversal of the tree using bounding-box minimum-distance pruning: only items
+	 * and nodes whose minimum possible distance to {@code q} is ≤
+	 * {@code maxDistance} are explored. If the index has no internal layers the
+	 * search degenerates to a linear scan of all items.
+	 * </p>
+	 *
+	 * <p>
+	 * Notes and guarantees:
+	 * <ul>
+	 * <li>If the tree contains no items, an empty list is returned.</li>
+	 * <li>If {@code maxDistance} is negative or NaN, an empty list is
+	 * returned.</li>
+	 * <li>{@code distFn.distance} should return a non-negative scalar; correctness
+	 * of pruning assumes that the function is consistent with geometric distance
+	 * ordering.</li>
+	 * <li>All items for which {@code distFn.distance(q, item) <= maxDistance} will
+	 * be returned (no false negatives); items with distance > maxDistance will not
+	 * be returned (no false positives).</li>
+	 * <li>The returned list is not sorted by distance; its iteration order follows
+	 * the traversal order used by the algorithm.</li>
+	 * </ul>
+	 *
+	 * @param q           the query coordinate
+	 * @param maxDistance the inclusive distance threshold; must be non-negative to
+	 *                    return any items
+	 * @param distFn      a callback that computes the distance between {@code q}
+	 *                    and an item
+	 * @return a list of items whose distance to {@code q} is less than or equal to
+	 *         {@code maxDistance}; an empty list if none match or if the tree is
+	 *         empty or {@code maxDistance} is negative/NaN
+	 * @see DistanceToItem
+	 */
+	@SuppressWarnings("unchecked")
+	public List<T> rangeQuery(Coordinate q, double maxDistance, DistanceToItem<T> distFn) {
+		build();
+		List<T> result = new ArrayList<>();
+		if (numItems == 0 || !(maxDistance >= 0.0)) {
+			return result; // empty or negative/NaN distance
+		}
+
+		final double qx = q.x, qy = q.y;
+		final double threshold = maxDistance;
+		final double thresholdSq = threshold * threshold;
+
+		// Degenerate case: no internal layers; scan items linearly
+		if (layerStartIndex == null) {
+			for (int i = 0; i < numItems; i++) {
+				T value = (T) itemValues[i];
+				if (distFn.distance(q, value) <= threshold) {
+					result.add(value);
+				}
+			}
+			return result;
+		}
+
+		// Use a primitive stack for (layerIndex, nodeOffset) pairs to minimize
+		// allocation
+		int[] stackLayer = new int[32];
+		int[] stackOff = new int[32];
+		int sp = 0;
+
+		// Seed with top-layer nodes whose MBR min-dist <= threshold
+		final int topLayer = layerStartIndex.length - 2;
+		final int topLayerSize = layerSize(topLayer);
+		for (int off = 0; off < topLayerSize; off += ENV_SIZE) {
+			double mdSq = mindistToNodeSquared(qx, qy, topLayer, off);
+			if (mdSq <= thresholdSq) {
+				if (sp == stackLayer.length) {
+					stackLayer = Arrays.copyOf(stackLayer, sp << 1);
+					stackOff = Arrays.copyOf(stackOff, sp << 1);
+				}
+				stackLayer[sp] = topLayer;
+				stackOff[sp] = off;
+				sp++;
+			}
+		}
+
+		while (sp > 0) {
+			sp--;
+			int layer = stackLayer[sp];
+			int off = stackOff[sp];
+
+			if (layer == 0) {
+				// Leaf-adjacent: test items in this node
+				int blockStart = (off / ENV_SIZE) * nodeCapacity;
+				for (int i = 0; i < nodeCapacity; i++) {
+					int itemIndex = blockStart + i;
+					if (itemIndex >= numItems)
+						break;
+					T value = (T) itemValues[itemIndex];
+					if (distFn.distance(q, value) <= threshold) {
+						result.add(value);
+					}
+				}
+			} else {
+				// Intermediate: push children whose MBR min-dist <= threshold
+				int childLayer = layer - 1;
+				int childLayerStart = layerStartIndex[childLayer];
+				int childLayerEnd = layerStartIndex[childLayer + 1];
+				int blockStart = off * nodeCapacity;
+				for (int i = 0; i < nodeCapacity; i++) {
+					int childOff = blockStart + ENV_SIZE * i;
+					if (childLayerStart + childOff >= childLayerEnd)
+						break;
+					double mdSq = mindistToNodeSquared(qx, qy, childLayer, childOff);
+					if (mdSq <= thresholdSq) {
+						if (sp == stackLayer.length) {
+							stackLayer = Arrays.copyOf(stackLayer, sp << 1);
+							stackOff = Arrays.copyOf(stackOff, sp << 1);
+						}
+						stackLayer[sp] = childLayer;
+						stackOff[sp] = childOff;
+						sp++;
+					}
+				}
+			}
+		}
+
+		return result;
 	}
 
 	private double mindistToNodeSquared(double qx, double qy, int layerIndex, int nodeOffset) {
