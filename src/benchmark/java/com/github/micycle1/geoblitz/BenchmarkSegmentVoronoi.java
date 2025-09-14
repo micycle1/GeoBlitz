@@ -50,7 +50,7 @@ public class BenchmarkSegmentVoronoi {
 		polygon = (Polygon) GeomMaker.make(n, seed);
 
 		// Build locators here so benchmarks measure locate(), not construction
-		svi = new SegmentVoronoiIndex(polygon, new Envelope(0, 1000, 0, 1000), 1);
+		svi = new SegmentVoronoiIndex(polygon, new Envelope(-10, 1010, 10, 1010), 1);
 		ifd = new IndexedFacetDistance(polygon);
 
 		// Generate reproducible test points near the polygon's envelope
@@ -68,8 +68,8 @@ public class BenchmarkSegmentVoronoi {
 		final double maxY = env.getMaxY() + 0.1 * h;
 
 		for (int i = 0; i < numPoints; i++) {
-			final double x = rnd.nextDouble(minX, maxX);
-			final double y = rnd.nextDouble(minY, maxY);
+			final double x = rnd.nextDouble(0, 1000);
+			final double y = rnd.nextDouble(0, 1000);
 			testPoints[i] = new Coordinate(x, y);
 		}
 
