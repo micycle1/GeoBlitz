@@ -2,28 +2,67 @@
 
 # GeoBlitz
 
-GeoBlitz is an experimental collection of very fast, JTS-inspired spatial indexes and geometry functionality.
+GeoBlitz is an experimental collection of very fast, JTS-inspired spatial indexes and geometry utilities.
 
-### Important notes
-- Experimental: APIs and implementations are subject to change.
-- Single-package for now: all classes live under `com.github.micycle1.geoblitz` to keep the project compact while iterating.
-- Intended use: generally, repeated spatial queries against fixed geometries (build-once, query-many).
-- Many GeoBlitz classes are designed as drop-in (or near drop-in) replacements for common JTS spatial operations.
+Designed for **build-once, query-many** scenarios, many classes serve as drop-in (or near drop-in) replacements for common [JTS](https://github.com/locationtech/jts/) operations, but with significantly better performance.
 
-### Quick overview
-- Y-stripe point-in-area locator for fast point-in-area tests on complex polygons.
-- A Voronoi-derived segment index that maps plane regions to their nearest line segment for fast nearest-segment queries.
-- An eXtended, typed HPRtree (HPRtreeX) with early-exit item visitor and nearest-neighbor search support.
+> **Important Notes**  
+> - **Experimental (for now)**: APIs and implementations may change.
+> - **Single-package**: All classes live under `com.github.micycle1.geoblitz` during early development.
+> - **Target Use**: Repeated spatial queries against fixed geometries (build once, query many).
 
-### Comparison vs JTS
-| GeoBlitz | JTS Counterpart | Use | Notes | Speedup |  |
-|---|---|---|---|---|---|
-| `YStripesPointInAreaLocator` | `IndexedPointInAreaLocator` | Point-in-polygon/area test (`contains`, `covers`, etc.) | Per-polygon Y-stripe locators + STRtree for multi-polygons. Reduces candidate segments per query. | ~4x |  |
-| `HPRtreeX` | `HPRtree` | Spatial index for envelope queries | HPRtreeX is typed (`<T>`) variant of HPRtree, and offers a `nearestNeighbor()` method based on "best-first" search | ... |  |
-| `SegmentVoronoiIndex` | `IndexedFacetDistance` | Nearest line segment to a coordinate / distance to a polygon | Fast spatial index for approximate nearest-segment queries using a Voronoi-based partitioning of the plane. O(log n) average query. Note: approximates true nearest-segment queries by sampling; accuracy depends on sample spacing. | ~4x |  |
-| `OmniUnion` | `CascadedPolygonUnion` | Union of many polygons | Faster union of many polygons by using a spatial index to find likely intersecting polygons. | TBD |  |
-| `ConvexHull` | `ConvexHull` | Convex hull of geometry | TBD |  |
+---
+
+### Core Indexes / Helpers
+
+#### `FastConvexHull`
+A compact, low-allocation convex hull implementation based on Andrew's monotone chain optimised for moderate-size inputs.
+- Performs in-place sorting and stack-style upper/lower hull construction to reduce memory churn.
+- Focuses on minimising allocations for faster execution on moderate-sized point sets.
+- Note: slower than JTS ConvexHull on extremely large inputs (≈1M+ points).
+
+#### `HilbertParallelPolygonUnion`
+High-performance polygon union using Hilbert curve ordering and parallel reduction.
+- Sorts geometries by a Hilbert-encoded key derived from envelopes to improve spatial locality.
+- Executes the union as a parallel reduction so many union tasks run concurrently.
+- Discards non-polygonal artifacts; returns clean `Polygon` or `MultiPolygon`.
+
+#### `HPRtreeX`
+A typed Hilbert-packed R-tree with extended query capabilities.
+- Generic type support (`<T>`) for storing arbitrary user objects.
+- Early-exit item visitors to allow immediate termination of queries.
+- Efficient nearest-neighbor (best-first) and range (depth-first) queries with bounding-box pruning.
+
+#### `IndexedLengthIndexedLine`
+Length-based linear-referencing with O(log n) length→location lookups for repeated queries.
+- Length-based linear referencing with O(log n) index for repeated `extractPoint()`/`extractLine()` calls.
+- Precomputes cumulative segment lengths.  
+- Ideal for large linestrings with many queries – much faster than JTS’s linear-scan `LengthIndexedLine`.
+
+#### `SegmentVoronoiIndex`
+Approximate nearest-segment index built from Voronoi cells of sampled points along input segments.
+- Samples each segment at configurable spacing to trade accuracy for build time and memory.
+- Builds a Voronoi diagram from samples and unions cells belonging to the same segment.
+- Answers nearest-segment queries via point-in-cell tests using `YStripesPointInAreaLocator`.
+
+#### `YStripesPointInAreaLocator`
+Fast point-in-area locator using per-polygon Y-stripe indexes and an HPR-tree for candidate selection.
+- Single-polygon fast path; HPR-tree of per-polygon locators for multi-polygons
+- Immutable and safe for concurrent repeated point-in-area queries
+- Inspired by the [tg library’s YStripes](https://github.com/tidwall/tg/blob/main/docs/POLYGON_INDEXING.md#ystripes).  
+
+### Comparison table
+| GeoBlitz Class | JTS Counterpart | Speedup |
+|---|---|---:|
+| FastConvexHull | ConvexHull | TBD |
+| HilbertParallelPolygonUnion | CascadedPolygonUnion | TBD |
+| HPRtreeX | HPRtree | *provides NN/range/early-exit features* |
+| IndexedLengthIndexedLine | LengthIndexedLine | O(log n) queries vs O(n) scan – large speedups for repeated queries |
+| SegmentVoronoiIndex | IndexedFacetDistance | ~4x (dataset & sampling dependent) |
+| YStripesPointInAreaLocator | IndexedPointInAreaLocator | ~4x |
+
 
 ### Benchmarks
+Include `jmh:benchmark` as a Maven goal to run the benchmarks (see pom.xml).
 
-Include `jmh:benchmark` as a Maven goal to run the benchmarks.
+Reported speedups depend on dataset, geometry complexity, and parameters (e.g., sampling spacing); please run the included JMH benchmarks on your data for authoritative numbers.
