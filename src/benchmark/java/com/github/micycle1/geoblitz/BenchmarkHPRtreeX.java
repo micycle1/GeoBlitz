@@ -136,14 +136,14 @@ public class BenchmarkHPRtreeX {
 			Coordinate q = queryPts[i];
 			Coordinate best = null;
 			double bestDist = Double.POSITIVE_INFINITY;
-			for (int j = 0; j < itemsPts.size(); j++) {
-				Coordinate it = itemsPts.get(j);
+			for (Coordinate it : itemsPts) {
 				double d = q.distance(it);
 				if (d < bestDist) {
 					bestDist = d;
 					best = it;
-					if (bestDist == 0.0)
+					if (bestDist == 0.0) {
 						break;
+					}
 				}
 			}
 			bh.consume(best);
@@ -197,14 +197,14 @@ public class BenchmarkHPRtreeX {
 			Coordinate q = queryPtsForSegs[i];
 			LineSegment best = null;
 			double bestDist = Double.POSITIVE_INFINITY;
-			for (int j = 0; j < itemsSegs.size(); j++) {
-				LineSegment seg = itemsSegs.get(j);
+			for (LineSegment seg : itemsSegs) {
 				double d = seg.distance(q);
 				if (d < bestDist) {
 					bestDist = d;
 					best = seg;
-					if (bestDist == 0.0)
+					if (bestDist == 0.0) {
 						break;
+					}
 				}
 			}
 			bh.consume(best);

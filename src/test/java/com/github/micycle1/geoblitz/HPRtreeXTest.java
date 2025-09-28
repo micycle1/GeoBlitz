@@ -1,6 +1,9 @@
 package com.github.micycle1.geoblitz;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -180,8 +183,9 @@ public class HPRtreeXTest {
 			List<Coordinate> expected = new ArrayList<>();
 			for (Coordinate it : items) {
 				double d = distFn.distance(q, it);
-				if (d <= r)
+				if (d <= r) {
 					expected.add(it);
+				}
 			}
 
 			List<Coordinate> actual = tree.rangeQuery(q, r, distFn);
@@ -204,8 +208,9 @@ public class HPRtreeXTest {
 		double r0 = 0.0;
 		List<Coordinate> expected0 = new ArrayList<>();
 		for (Coordinate it : items) {
-			if (distFn.distance(q0, it) <= r0)
+			if (distFn.distance(q0, it) <= r0) {
 				expected0.add(it);
+			}
 		}
 		List<Coordinate> actual0 = tree.rangeQuery(q0, r0, distFn);
 		assertEquals(expected0.size(), actual0.size());
@@ -252,8 +257,9 @@ public class HPRtreeXTest {
 
 			List<LineSegment> expected = new ArrayList<>();
 			for (LineSegment seg : items) {
-				if (distFn.distance(q, seg) <= r)
+				if (distFn.distance(q, seg) <= r) {
 					expected.add(seg);
+				}
 			}
 
 			List<LineSegment> actual = tree.rangeQuery(q, r, distFn);
@@ -272,8 +278,9 @@ public class HPRtreeXTest {
 			Coordinate endpoint = seg.p0;
 			List<LineSegment> expected0 = new ArrayList<>();
 			for (LineSegment s : items) {
-				if (distFn.distance(endpoint, s) <= 0.0)
+				if (distFn.distance(endpoint, s) <= 0.0) {
 					expected0.add(s);
+				}
 			}
 			List<LineSegment> actual0 = tree.rangeQuery(endpoint, 0.0, distFn);
 			assertEquals(expected0.size(), actual0.size());

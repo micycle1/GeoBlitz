@@ -11,7 +11,15 @@ import org.locationtech.jts.geom.LinearRing;
 import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.Polygon;
 
+// slower than JTS ConvexHull on inputs of ~1M+.
 public final class FastConvexHull {
+
+	/*
+	 * A Java port of Jernej Puc's "optimised version" (Python) of A. M. Andrew's
+	 * monotone chain algorithm for constructing convex hulls. Unlike the Python
+	 * version, this version handles duplicate coordinates (that are otherwise a
+	 * degenerate case).
+	 */
 
 	private GeometryFactory geomFactory;
 	private Coordinate[] inputPts;
@@ -22,7 +30,7 @@ public final class FastConvexHull {
 
 	public FastConvexHull(Coordinate[] pts, GeometryFactory geomFactory) {
 		inputPts = pts;
-		
+
 		this.geomFactory = geomFactory;
 	}
 
@@ -160,6 +168,7 @@ public final class FastConvexHull {
 		if (a.length <= 1) {
 			return a.length;
 		}
+
 		Arrays.sort(a, XY_ORDER);
 		int m = 1;
 		Coordinate prev = a[0];

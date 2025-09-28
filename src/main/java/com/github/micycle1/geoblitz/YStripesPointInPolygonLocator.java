@@ -20,7 +20,7 @@ import org.locationtech.jts.geom.Polygon;
  * For more details, see the <a href=
  * "https://github.com/tidwall/tg/blob/main/docs/POLYGON_INDEXING.md#ystripes">
  * YStripes: Polygon Indexing in 'tg' Library</a>.
- * 
+ *
  * @author Michael Carleton
  */
 final class YStripesPointInPolygonLocator implements PointOnGeometryLocator {
@@ -40,7 +40,7 @@ final class YStripesPointInPolygonLocator implements PointOnGeometryLocator {
 
 	/**
 	 * Determines the {@link Location} of a point in a {@link Polygon}.
-	 * 
+	 *
 	 * @param p the point to test
 	 * @return the location of the point in the geometry
 	 */

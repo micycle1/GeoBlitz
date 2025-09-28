@@ -133,6 +133,7 @@
 				<configuration>
 					<source>17</source>
 					<target>17</target>
+					<benchmarks>com.github.micycle1.geoblitz.BenchmarkLengthIndexedLine</benchmarks>
 					<warmupIterations>1</warmupIterations>
 					<warmupForks>0</warmupForks>
 					<iterations>1</iterations>

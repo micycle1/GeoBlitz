@@ -2,9 +2,8 @@ package com.github.micycle1.geoblitz;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
-
 import java.util.Comparator;
+import java.util.List;
 import java.util.PriorityQueue;
 import java.util.SplittableRandom;
 
@@ -139,8 +138,9 @@ public class HPRtreeX<T> {
 	public List<T> query(Envelope searchEnv) {
 		build();
 
-		if (!totalExtent.intersects(searchEnv))
+		if (!totalExtent.intersects(searchEnv)) {
 			return new ArrayList<>();
+		}
 
 		List<T> result = new ArrayList<>();
 		query(searchEnv, item -> {
@@ -171,8 +171,9 @@ public class HPRtreeX<T> {
 	 */
 	public void query(Envelope searchEnv, ItemVisitor<T> visitor) {
 		build();
-		if (!totalExtent.intersects(searchEnv))
+		if (!totalExtent.intersects(searchEnv)) {
 			return;
+		}
 
 		terminated = false;
 		if (layerStartIndex == null) {
@@ -182,13 +183,19 @@ public class HPRtreeX<T> {
 		}
 	}
 
+	@SuppressWarnings("unchecked")
+	public List<T> items() {
+	    return Arrays.asList((T[]) itemValues);
+	}
+
 	private void queryTopLayer(Envelope searchEnv, ItemVisitor<T> visitor) {
 		int layerIndex = layerStartIndex.length - 2;
 		int layerSize = layerSize(layerIndex);
 		// query each node in layer
 		for (int i = 0; i < layerSize; i += ENV_SIZE) {
-			if (terminated)
+			if (terminated) {
 				break;
+			}
 			queryNode(layerIndex, i, searchEnv, visitor);
 		}
 	}
@@ -196,10 +203,9 @@ public class HPRtreeX<T> {
 	private void queryNode(int layerIndex, int nodeOffset, Envelope searchEnv, ItemVisitor<T> visitor) {
 		int layerStart = layerStartIndex[layerIndex];
 		int nodeIndex = layerStart + nodeOffset;
-		if (!intersects(nodeBounds, nodeIndex, searchEnv))
+		if (!intersects(nodeBounds, nodeIndex, searchEnv) || terminated) {
 			return;
-		if (terminated)
-			return;
+		}
 
 		if (layerIndex == 0) {
 			int childNodesOffset = nodeOffset / ENV_SIZE * nodeCapacity;
@@ -220,12 +226,14 @@ public class HPRtreeX<T> {
 		int layerStart = layerStartIndex[layerIndex];
 		int layerEnd = layerStartIndex[layerIndex + 1];
 		for (int i = 0; i < nodeCapacity; i++) {
-			if (terminated)
+			if (terminated) {
 				break;
+			}
 			int nodeOffset = blockOffset + ENV_SIZE * i;
 			// don't query past layer end
-			if (layerStart + nodeOffset >= layerEnd)
+			if (layerStart + nodeOffset >= layerEnd) {
 				break;
+			}
 
 			queryNode(layerIndex, nodeOffset, searchEnv, visitor);
 		}
@@ -234,13 +242,15 @@ public class HPRtreeX<T> {
 	@SuppressWarnings("unchecked")
 	private void queryItems(int blockStart, Envelope searchEnv, ItemVisitor<T> visitor) {
 		for (int i = 0; i < nodeCapacity; i++) {
-			if (terminated)
+			if (terminated) {
 				return;
+			}
 
 			int itemIndex = blockStart + i;
 			// don't query past end of items
-			if (itemIndex >= numItems)
+			if (itemIndex >= numItems) {
 				break;
+			}
 			if (intersects(itemBounds, itemIndex * ENV_SIZE, searchEnv)) {
 				T value = (T) itemValues[itemIndex];
 				if (!visitor.visitItem(value)) {
@@ -285,8 +295,9 @@ public class HPRtreeX<T> {
 
 	private void prepareIndex() {
 		// don't need to build an empty or very small tree
-		if (itemsToLoad.size() <= nodeCapacity)
+		if (itemsToLoad.size() <= nodeCapacity) {
 			return;
+		}
 
 		sortItems();
 
@@ -346,8 +357,9 @@ public class HPRtreeX<T> {
 	private void computeNodeBounds(int nodeIndex, int blockStart, int nodeMaxIndex) {
 		for (int i = 0; i <= nodeCapacity; i++) {
 			int index = blockStart + 4 * i;
-			if (index >= nodeMaxIndex)
+			if (index >= nodeMaxIndex) {
 				break;
+			}
 			updateNodeBounds(nodeIndex, nodeBounds[index], nodeBounds[index + 1], nodeBounds[index + 2], nodeBounds[index + 3]);
 		}
 	}
@@ -361,22 +373,27 @@ public class HPRtreeX<T> {
 	private void computeLeafNodeBounds(int nodeIndex, int blockStart) {
 		for (int i = 0; i <= nodeCapacity; i++) {
 			int itemIndex = blockStart + i;
-			if (itemIndex >= itemsToLoad.size())
+			if (itemIndex >= itemsToLoad.size()) {
 				break;
+			}
 			Envelope env = itemsToLoad.get(itemIndex).getEnvelope();
 			updateNodeBounds(nodeIndex, env.getMinX(), env.getMinY(), env.getMaxX(), env.getMaxY());
 		}
 	}
 
 	private void updateNodeBounds(int nodeIndex, double minX, double minY, double maxX, double maxY) {
-		if (minX < nodeBounds[nodeIndex])
+		if (minX < nodeBounds[nodeIndex]) {
 			nodeBounds[nodeIndex] = minX;
-		if (minY < nodeBounds[nodeIndex + 1])
+		}
+		if (minY < nodeBounds[nodeIndex + 1]) {
 			nodeBounds[nodeIndex + 1] = minY;
-		if (maxX > nodeBounds[nodeIndex + 2])
+		}
+		if (maxX > nodeBounds[nodeIndex + 2]) {
 			nodeBounds[nodeIndex + 2] = maxX;
-		if (maxY > nodeBounds[nodeIndex + 3])
+		}
+		if (maxY > nodeBounds[nodeIndex + 3]) {
 			nodeBounds[nodeIndex + 3] = maxY;
+		}
 	}
 
 	private static int[] computeLayerIndices(int itemSize, int nodeCapacity) {
@@ -394,7 +411,7 @@ public class HPRtreeX<T> {
 	/**
 	 * Computes the number of blocks (nodes) required to cover a given number of
 	 * children.
-	 * 
+	 *
 	 * @param nChild
 	 * @param nodeCapacity
 	 * @return the number of nodes needed to cover the children
@@ -402,8 +419,9 @@ public class HPRtreeX<T> {
 	private static int numNodesToCover(int nChild, int nodeCapacity) {
 		int mult = nChild / nodeCapacity;
 		int total = mult * nodeCapacity;
-		if (total == nChild)
+		if (total == nChild) {
 			return mult;
+		}
 		return mult + 1;
 	}
 
@@ -459,14 +477,15 @@ public class HPRtreeX<T> {
 		int j = hi + 1;
 
 		while (true) {
-			do
+			do {
 				i++;
-			while (values[i] < pivot);
-			do
+			} while (values[i] < pivot);
+			do {
 				j--;
-			while (values[j] > pivot);
-			if (i >= j)
+			} while (values[j] > pivot);
+			if (i >= j) {
 				return j;
+			}
 			swapItems(values, i, j);
 		}
 	}
@@ -533,8 +552,9 @@ public class HPRtreeX<T> {
 					bestDist = d;
 					bestDistSq = d * d;
 					best = value;
-					if (bestDist == 0.0)
+					if (bestDist == 0.0) {
 						return best;
+					}
 				}
 			}
 			return best;
@@ -555,24 +575,27 @@ public class HPRtreeX<T> {
 
 		while (!H.isEmpty()) {
 			HEntry r = H.poll();
-			if (r.minDist >= bestDistSq)
+			if (r.minDist >= bestDistSq) {
 				break; // cannot improve best
+			}
 
 			if (r.layerIndex == 0) {
 				// Leaf-adjacent: scan items in this node
 				int blockStart = (r.nodeOffset / ENV_SIZE) * nodeCapacity;
 				for (int i = 0; i < nodeCapacity; i++) {
 					int itemIndex = blockStart + i;
-					if (itemIndex >= numItems)
+					if (itemIndex >= numItems) {
 						break;
+					}
 					T value = (T) itemValues[itemIndex];
 					double d = distFn.distance(q, value);
 					if (d < bestDist) {
 						bestDist = d;
 						bestDistSq = d * d;
 						best = value;
-						if (bestDist == 0.0)
+						if (bestDist == 0.0) {
 							return best;
+						}
 					}
 				}
 			} else {
@@ -583,8 +606,9 @@ public class HPRtreeX<T> {
 				int blockStart = r.nodeOffset * nodeCapacity;
 				for (int i = 0; i < nodeCapacity; i++) {
 					int childNodeOffset = blockStart + ENV_SIZE * i;
-					if (childLayerStart + childNodeOffset >= childLayerEnd)
+					if (childLayerStart + childNodeOffset >= childLayerEnd) {
 						break;
+					}
 					double mdSq = mindistToNodeSquared(qx, qy, childLayer, childNodeOffset);
 					if (mdSq < bestDistSq) {
 						H.add(new HEntry(childLayer, childNodeOffset, mdSq));
@@ -690,8 +714,9 @@ public class HPRtreeX<T> {
 				int blockStart = (off / ENV_SIZE) * nodeCapacity;
 				for (int i = 0; i < nodeCapacity; i++) {
 					int itemIndex = blockStart + i;
-					if (itemIndex >= numItems)
+					if (itemIndex >= numItems) {
 						break;
+					}
 					T value = (T) itemValues[itemIndex];
 					if (distFn.distance(q, value) <= threshold) {
 						result.add(value);
@@ -705,8 +730,9 @@ public class HPRtreeX<T> {
 				int blockStart = off * nodeCapacity;
 				for (int i = 0; i < nodeCapacity; i++) {
 					int childOff = blockStart + ENV_SIZE * i;
-					if (childLayerStart + childOff >= childLayerEnd)
+					if (childLayerStart + childOff >= childLayerEnd) {
 						break;
+					}
 					double mdSq = mindistToNodeSquared(qx, qy, childLayer, childOff);
 					if (mdSq <= thresholdSq) {
 						if (sp == stackLayer.length) {
@@ -736,16 +762,18 @@ public class HPRtreeX<T> {
 	// Rename: squared distance, no sqrt
 	private static double pointToRectDistanceSquared(double qx, double qy, double minX, double minY, double maxX, double maxY) {
 		double dx = 0.0;
-		if (qx < minX)
+		if (qx < minX) {
 			dx = minX - qx;
-		else if (qx > maxX)
+		} else if (qx > maxX) {
 			dx = qx - maxX;
+		}
 
 		double dy = 0.0;
-		if (qy < minY)
+		if (qy < minY) {
 			dy = minY - qy;
-		else if (qy > maxY)
+		} else if (qy > maxY) {
 			dy = qy - maxY;
+		}
 
 		return dx * dx + dy * dy;
 	}

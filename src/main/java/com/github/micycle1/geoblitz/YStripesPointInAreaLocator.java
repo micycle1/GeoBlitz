@@ -10,7 +10,6 @@ import org.locationtech.jts.geom.Geometry;
 import org.locationtech.jts.geom.GeometryCollection;
 import org.locationtech.jts.geom.Location;
 import org.locationtech.jts.geom.Polygon;
-import org.locationtech.jts.index.strtree.STRtree;
 
 /**
  * Point-in-area locator for areal Geometries that uses per-polygon Y-stripe
@@ -24,7 +23,7 @@ import org.locationtech.jts.index.strtree.STRtree;
  * <p>
  * Instances are immutable and safe for concurrent use, and are intended for
  * repeated point-in-area queries against a fixed Geometry.
- * 
+ *
  * @author Michael Carleton
  * @see YStripesPointInPolygonLocator
  */
@@ -68,7 +67,7 @@ public final class YStripesPointInAreaLocator implements PointOnGeometryLocator 
 
 	/**
 	 * Determines the {@link Location} of a point in an areal {@link Geometry}.
-	 * 
+	 *
 	 * @param p the point to test
 	 * @return the location of the point in the geometry
 	 */

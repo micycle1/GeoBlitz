@@ -119,8 +119,9 @@ public class HilbertParallelPolygonUnion {
 	 */
 	private static void sort(List<? extends Geometry> geoms, int level) {
 		int n = geoms.size();
-		if (n < 2)
+		if (n < 2) {
 			return;
+		}
 
 		Envelope globalExtent = new Envelope();
 		for (Geometry g : geoms) {
@@ -149,8 +150,9 @@ public class HilbertParallelPolygonUnion {
 		// so that both arrays are sorted according to hilbert order key.
 		boolean[] seen = new boolean[n];
 		for (int i = 0; i < n; i++) {
-			if (seen[i] || idx[i] == i)
+			if (seen[i] || idx[i] == i) {
 				continue;
+			}
 
 			int cycleStart = i;
 			int j = i;
