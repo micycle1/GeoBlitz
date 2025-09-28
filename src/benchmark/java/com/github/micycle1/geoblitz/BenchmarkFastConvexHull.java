@@ -26,10 +26,10 @@ import org.openjdk.jmh.infra.Blackhole;
 @Warmup(iterations = 1, time = 1)
 @Measurement(iterations = 2, time = 2)
 @Fork(value = 1)
-public class BenchmarkQuickConvexHull {
+public class BenchmarkFastConvexHull {
 
 	private ConvexHull jtsHull;
-	private FastConvexHull quickHull;
+	private FastConvexHull fastHull;
 	private Coordinate[] testPoints;
 	private GeometryFactory gf;
 
@@ -52,9 +52,9 @@ public class BenchmarkQuickConvexHull {
 
 	@Benchmark
 //	@OperationsPerInvocation(n)
-	public void testQuickConvexHull(Blackhole bh) {
-		quickHull = new FastConvexHull(testPoints, gf);
-		bh.consume(quickHull.getConvexHull());
+	public void testFastConvexHull(Blackhole bh) {
+		fastHull = new FastConvexHull(testPoints, gf);
+		bh.consume(fastHull.getConvexHull());
 	}
 
 	@Benchmark
