@@ -39,6 +39,12 @@ Length-based linear-referencing with O(log n) length→location lookups for repe
 - Precomputes cumulative segment lengths.  
 - Ideal for large linestrings with many queries – much faster than JTS’s linear-scan `LengthIndexedLine`.
 
+#### `FastLineIntersector`
+High-throughput line-segment intersection that trades the absolute robustness of the JTS robust intersector for speed.
+- Skips expensive DD (double-double) arithmetic and full determinant expansion in the common case; falls back to a robust determinant predicate only when a tiny relative epsilon indicates near-degeneracy.
+- Skips coordinate z-interpolation.
+- Use case: many short-lived segment intersection computations where throughput matters and the input is not adversarial. Not recommended when absolute bitwise-robustness for degenerate, adversarial or extremely large-scale inputs is required.
+
 #### `SegmentVoronoiIndex`
 Approximate nearest-segment index built from Voronoi cells of sampled points along input segments.
 - Samples each segment at configurable spacing to trade accuracy for build time and memory.
@@ -58,6 +64,7 @@ Fast point-in-area locator using per-polygon Y-stripe indexes and an HPR-tree fo
 | HilbertParallelPolygonUnion | CascadedPolygonUnion | TBD |
 | HPRtreeX | HPRtree | *provides NN/range/early-exit features* |
 | IndexedLengthIndexedLine | LengthIndexedLine | O(log n) queries vs O(n) scan – large speedups for repeated queries |
+| FastLineIntersector | RobustLineIntersector | ~2x |
 | SegmentVoronoiIndex | IndexedFacetDistance | ~4x (dataset & sampling dependent) |
 | YStripesPointInAreaLocator | IndexedPointInAreaLocator | ~4x |
 
