@@ -53,11 +53,19 @@ Approximate nearest-segment index built from Voronoi cells of sampled points alo
 
 #### `YStripesPointInAreaLocator`
 Fast point-in-area locator using per-polygon Y-stripe indexes and an HPR-tree for candidate selection.
-- Single-polygon fast path; HPR-tree of per-polygon locators for multi-polygons
-- Immutable and safe for concurrent repeated point-in-area queries
-- Inspired by the [tg library’s YStripes](https://github.com/tidwall/tg/blob/main/docs/POLYGON_INDEXING.md#ystripes).  
+- Single-polygon fast path; HPR-tree of per-polygon locators for multi-polygons.
+- Immutable and safe for concurrent repeated point-in-area queries.
+- Inspired by the [tg library’s YStripes](https://github.com/tidwall/tg/blob/main/docs/POLYGON_INDEXING.md#ystripes).
+
+#### `EndpointSnapper`
+Endpoint-only snapping for near-coverage linework (with optional polygon-vertex anchoring).
+- Snaps only LineString *endpoints* together within a tolerance; interior line vertices and polygon vertices are never moved.
+- Uses transitive clustering to close tiny endpoint gaps and near-misses.
+- Preserves structure: returns snapped LineStrings; Polygons/MultiPolygons (and other types) are passed through unchanged.
+- Intended for line arrangements that should form a valid coverage but don’t quite join; typically followed by noding and polygonization to build faces. Not a general vertex/edge snapper.
 
 ### Comparison table
+*For classes with a JTS counterpart*
 | GeoBlitz Class | JTS Counterpart | Speedup |
 |---|---|---:|
 | FastConvexHull | ConvexHull | TBD |
