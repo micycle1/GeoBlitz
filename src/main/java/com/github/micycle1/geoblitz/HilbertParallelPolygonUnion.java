@@ -1,5 +1,6 @@
 package com.github.micycle1.geoblitz;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
@@ -93,6 +94,7 @@ public class HilbertParallelPolygonUnion {
 	 */
 	public static Geometry union(List<Geometry> geoms) {
 		int n = geoms.size();
+		geoms = new ArrayList<>(geoms); // copy for mutation
 		sort(geoms, HilbertCode.level(n)); // sort according to center point of MBR
 		var factory = geoms.get(0).getFactory();
 
