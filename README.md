@@ -27,6 +27,9 @@ High-performance polygon union using Hilbert curve ordering and parallel reducti
 - Executes the union as a parallel reduction so many union tasks run concurrently.
 - Discards non-polygonal artifacts; returns clean `Polygon` or `MultiPolygon`.
 
+#### `FastVariableBuffer`
+Identical to JTS VariableBuffer but uses HilbertParallelPolygonUnion for faster unioning of buffer components.
+
 #### `HPRtreeX`
 A typed Hilbert-packed R-tree with extended query capabilities.
 - Generic type support (`<T>`) for storing arbitrary user objects.

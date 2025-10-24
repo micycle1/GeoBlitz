@@ -8,6 +8,7 @@ import java.util.stream.IntStream;
 
 import org.locationtech.jts.geom.Envelope;
 import org.locationtech.jts.geom.Geometry;
+import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Polygon;
 import org.locationtech.jts.geom.Polygonal;
 import org.locationtech.jts.geom.util.PolygonExtracter;
@@ -93,6 +94,9 @@ public class HilbertParallelPolygonUnion {
 	 * @return a polygonal geometry representing the union (Polygon or MultiPolygon)
 	 */
 	public static Geometry union(List<Geometry> geoms) {
+		if (geoms.isEmpty()) {
+			return new GeometryFactory().createEmpty(2);
+		}
 		int n = geoms.size();
 		geoms = new ArrayList<>(geoms); // copy for mutation
 		sort(geoms, HilbertCode.level(n)); // sort according to center point of MBR
