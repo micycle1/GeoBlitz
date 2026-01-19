@@ -21,8 +21,8 @@ import org.locationtech.jts.io.WKTReader;
 import org.locationtech.jts.io.WKTWriter;
 
 /**
- * Tests copied over from JTS - tests basic functionality, and ness and
- * correctness of LineIntersector in some tricky cases.
+ * Tests copied over from JTS - tests basic functionality, and correctness of
+ * LineIntersector in some tricky cases.
  */
 public class FastLineIntersectionTest {
 	private WKTReader reader = new WKTReader();
@@ -34,8 +34,6 @@ public class FastLineIntersectionTest {
 	public void setUp() {
 		i = new FastLineIntersector();
 	}
-	
-	// FUNCTIONALITY TESTS
 
 	@Test
 	public void test2Lines() {
@@ -160,7 +158,7 @@ public class FastLineIntersectionTest {
 		assertFalse(PointLocation.isOnLine(q, new Coordinate[] { p1, p2 }));
 		assertEquals(-1, Orientation.index(p1, p2, q));
 	}
-	
+
 	// CASES
 
 	@Test

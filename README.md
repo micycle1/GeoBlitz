@@ -60,6 +60,13 @@ Fast point-in-area locator using per-polygon Y-stripe indexes and an HPR-tree fo
 - Immutable and safe for concurrent repeated point-in-area queries.
 - Inspired by the [tg library’s YStripes](https://github.com/tidwall/tg/blob/main/docs/POLYGON_INDEXING.md#ystripes).
 
+
+#### `ProHausdorffDistance`
+Projection-based Hausdorff Distance approximation (ProHD).
+- Projects geometry points onto informative directions (centroid axis, PCA axis) and computes Hausdorff distance on a small subset of extreme points.
+- Extremely fast *underestimate* of the true Hausdorff distance.
+- Adjustable `alpha` parameter controls accuracy vs speed.
+
 #### `EndpointSnapper`
 Endpoint-only snapping for near-coverage linework (with optional polygon-vertex anchoring).
 - Snaps only LineString *endpoints* together within a tolerance; interior line vertices and polygon vertices are never moved.
@@ -78,6 +85,7 @@ Endpoint-only snapping for near-coverage linework (with optional polygon-vertex 
 | FastLineIntersector | RobustLineIntersector | ~2x |
 | SegmentVoronoiIndex | IndexedFacetDistance | ~4x (dataset & sampling dependent) |
 | YStripesPointInAreaLocator | IndexedPointInAreaLocator | ~4x |
+| ProHausdorffDistance | DiscreteHausdorffDistance | 10x+ |
 
 
 ### Benchmarks
