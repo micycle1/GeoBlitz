@@ -60,11 +60,10 @@ Fast point-in-area locator using per-polygon Y-stripe indexes and an HPR-tree fo
 - Immutable and safe for concurrent repeated point-in-area queries.
 - Inspired by the [tg library’s YStripes](https://github.com/tidwall/tg/blob/main/docs/POLYGON_INDEXING.md#ystripes).
 
-
 #### `ProHausdorffDistance`
-Projection-based Hausdorff Distance approximation (ProHD).
+Projection-based Hausdorff Distance approximation. Implements [ProHD](https://www.arxiv.org/abs/2511.18207).
 - Projects geometry points onto informative directions (centroid axis, PCA axis) and computes Hausdorff distance on a small subset of extreme points.
-- Extremely fast *underestimate* of the true Hausdorff distance.
+- Extremely fast estimate of the true Hausdorff distance.
 - Adjustable `alpha` parameter controls accuracy vs speed.
 
 #### `EndpointSnapper`
