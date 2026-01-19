@@ -50,8 +50,9 @@ public final class ProHausdorffDistance {
 	 *                         0.005–0.05 (often 0.01).
 	 * @param maxSegmentLength if > 0, densifies geometry segments so consecutive
 	 *                         sample points are at most this far apart (in geometry
-	 *                         units). If <= 0, uses only the geometry's existing
+	 *                         units). If &lt;= 0, uses only the geometry's existing
 	 *                         vertices.
+	 * @return the approximate Hausdorff distance
 	 */
 	public static double distance(Geometry a, Geometry b, double alpha, double maxSegmentLength) {
 		Objects.requireNonNull(a, "a");

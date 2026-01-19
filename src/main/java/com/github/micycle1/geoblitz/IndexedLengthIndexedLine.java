@@ -155,19 +155,41 @@ public final class IndexedLengthIndexedLine {
 		return extractSubline(linearGeom, startLoc, endLoc);
 	}
 
+	/**
+	 * Returns the start index of the line.
+	 * 
+	 * @return the start index (0.0)
+	 */
 	public double getStartIndex() {
 		return 0.0;
 	}
 
+	/**
+	 * Returns the end index of the line.
+	 * 
+	 * @return the end index (total length)
+	 */
 	public double getEndIndex() {
 		return totalLength;
 	}
 
+	/**
+	 * Checks if the given index is valid (within the range of the line).
+	 *
+	 * @param index the index to check
+	 * @return true if the index is valid
+	 */
 	public boolean isValidIndex(double index) {
 		double pos = positiveIndex(index);
 		return pos >= 0.0 && pos <= totalLength;
 	}
 
+	/**
+	 * Clamps the index to the valid range [0, totalLength].
+	 *
+	 * @param index the index to clamp
+	 * @return the clamped index
+	 */
 	public double clampIndex(double index) {
 		double pos = positiveIndex(index);
 		if (pos < 0.0) {

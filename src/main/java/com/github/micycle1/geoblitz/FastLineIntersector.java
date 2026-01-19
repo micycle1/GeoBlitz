@@ -41,6 +41,9 @@ import org.locationtech.jts.geom.Envelope;
  */
 public class FastLineIntersector extends LineIntersector {
 
+	/**
+	 * Creates a new FastLineIntersector.
+	 */
 	public FastLineIntersector() {
 	}
 

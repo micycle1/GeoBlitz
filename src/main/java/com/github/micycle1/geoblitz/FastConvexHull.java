@@ -12,6 +12,10 @@ import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.Polygon;
 
 // slower than JTS ConvexHull on inputs of ~1M+.
+/**
+ * Computes the convex hull of a set of points using a fast monotone chain
+ * algorithm.
+ */
 public final class FastConvexHull {
 
 	/*
@@ -24,16 +28,32 @@ public final class FastConvexHull {
 	private GeometryFactory geomFactory;
 	private Coordinate[] inputPts;
 
+	/**
+	 * Creates a new FastConvexHull for the given Geometry's coordinates.
+	 *
+	 * @param geometry the geometry whose points will be used
+	 */
 	public FastConvexHull(Geometry geometry) {
 		this(geometry.getCoordinates(), geometry.getFactory());
 	}
 
+	/**
+	 * Creates a new FastConvexHull for the given points.
+	 *
+	 * @param pts         the input points
+	 * @param geomFactory the geometry factory to use for the result
+	 */
 	public FastConvexHull(Coordinate[] pts, GeometryFactory geomFactory) {
 		inputPts = pts;
 
 		this.geomFactory = geomFactory;
 	}
 
+	/**
+	 * Computes the convex hull.
+	 *
+	 * @return the convex hull geometry
+	 */
 	public Geometry getConvexHull() {
 		if (inputPts.length == 0) {
 			return geomFactory.createGeometryCollection(new Geometry[0]);

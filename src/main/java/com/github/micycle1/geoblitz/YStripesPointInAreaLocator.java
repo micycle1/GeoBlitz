@@ -33,6 +33,11 @@ public final class YStripesPointInAreaLocator implements PointOnGeometryLocator 
 	private final HPRtreeX<PointOnGeometryLocator> tree;
 	private Envelope qEnv = new Envelope(0, 0, 0, 0);
 
+	/**
+	 * Creates a new locator for the given geometry.
+	 *
+	 * @param geom the geometry to index
+	 */
 	public YStripesPointInAreaLocator(Geometry geom) {
 		List<Polygon> polys = new ArrayList<>();
 		collectPolygons(geom, polys);

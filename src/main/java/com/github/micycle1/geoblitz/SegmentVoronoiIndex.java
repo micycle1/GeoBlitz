@@ -52,6 +52,9 @@ public class SegmentVoronoiIndex {
 	private final GeometryFactory gf;
 	private Envelope clipEnvelope;
 	private final List<LineSegment> segments;
+	/**
+	 * The spatial index of Voronoi cells.
+	 */
 	public final HPRtreeX<CellRecord> cellIndex; // indexes Voronoi cells
 
 	/**
@@ -278,6 +281,9 @@ public class SegmentVoronoiIndex {
 		cellBlobs.forEach(cb -> cellIndex.insert(cb.e, cb));
 	}
 
+	/**
+	 * List of lists of polygons representing the cells.
+	 */
 	public List<List<Polygon>> cellsList;
 
 	private static List<Coordinate> sampleSegment(LineSegment seg, double spacing) {
@@ -312,7 +318,13 @@ public class SegmentVoronoiIndex {
 		}
 	}
 
+	/**
+	 * A record containing the Voronoi cell polygon and its associated segment.
+	 */
 	public static final class CellRecord {
+		/**
+		 * The Voronoi cell polygon.
+		 */
 		public final Polygon cell;
 		private final LineSegment segment;
 		PointOnGeometryLocator areaLocator;

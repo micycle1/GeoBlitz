@@ -183,9 +183,14 @@ public class HPRtreeX<T> {
 		}
 	}
 
+	/**
+	 * Returns a list of all items in the tree.
+	 *
+	 * @return a list of all items
+	 */
 	@SuppressWarnings("unchecked")
 	public List<T> items() {
-	    return Arrays.asList((T[]) itemValues);
+		return Arrays.asList((T[]) itemValues);
 	}
 
 	private void queryTopLayer(Envelope searchEnv, ItemVisitor<T> visitor) {
