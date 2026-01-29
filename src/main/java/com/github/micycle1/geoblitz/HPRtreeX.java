@@ -2,18 +2,16 @@ package com.github.micycle1.geoblitz;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Comparator;
 import java.util.List;
-import java.util.PriorityQueue;
-import java.util.SplittableRandom;
-
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.Envelope;
+import org.locationtech.jts.index.hprtree.HPRtree;
 import org.locationtech.jts.index.hprtree.HilbertEncoder;
 import org.locationtech.jts.util.IntArrayList;
 
 /**
- * Improves the original JTS HPRTree implementation with eXtended features:
+ * Improves the original JTS {@link HPRtree} implementation with eXtended
+ * features:
  * <ul>
  * <li>Generics support so the tree can store arbitrary user objects of type
  * {@code T}.</li>
@@ -50,9 +48,8 @@ public class HPRtreeX<T> {
 	private double[] itemBounds;
 	private Object[] itemValues; // Java cannot create a generic array of T
 	private volatile boolean isBuilt = false;
-
-	// Used to support early termination during query
-	private boolean terminated = false;
+	private boolean terminated = false; // Used to support early termination during query
+	private final ThreadLocal<Scratch> tlsScratch = ThreadLocal.withInitial(() -> new Scratch(64, 64));
 
 	/**
 	 * Creates a new index using the default node capacity.
@@ -332,7 +329,7 @@ public class HPRtreeX<T> {
 			itemBounds[boundsIndex++] = envelope.getMaxY();
 			itemValues[valueIndex++] = item.getItem();
 		}
-		// and let GC free the original list
+		// free gc
 		itemsToLoad = null;
 	}
 
@@ -360,7 +357,7 @@ public class HPRtreeX<T> {
 	}
 
 	private void computeNodeBounds(int nodeIndex, int blockStart, int nodeMaxIndex) {
-		for (int i = 0; i <= nodeCapacity; i++) {
+		for (int i = 0; i < nodeCapacity; i++) {
 			int index = blockStart + 4 * i;
 			if (index >= nodeMaxIndex) {
 				break;
@@ -376,7 +373,7 @@ public class HPRtreeX<T> {
 	}
 
 	private void computeLeafNodeBounds(int nodeIndex, int blockStart) {
-		for (int i = 0; i <= nodeCapacity; i++) {
+		for (int i = 0; i < nodeCapacity; i++) {
 			int itemIndex = blockStart + i;
 			if (itemIndex >= itemsToLoad.size()) {
 				break;
@@ -507,36 +504,83 @@ public class HPRtreeX<T> {
 
 	/**
 	 * Finds and returns the item nearest to the query point {@code q}, according to
-	 * the user-supplied distance function {@code distFn}.
+	 * the user-supplied <em>linear</em> distance function {@code distFn}.
 	 *
 	 * <p>
-	 * The {@link DistanceToItem} callback is used to compute the distance from the
-	 * query coordinate to a stored item. The implementation performs a best-first
-	 * traversal of the tree using bounding-box minimum-distance pruning; only items
-	 * and nodes that can beat the current best distance are explored. If the index
-	 * has no internal layers the search degenerates to a linear scan of all items.
+	 * The {@link DistanceToItem} callback is used to compute the (non-squared)
+	 * distance from the query coordinate to a stored item (e.g. Euclidean
+	 * distance). The implementation performs a best-first traversal of the tree
+	 * using bounding-box minimum-distance pruning; only items and nodes that can
+	 * beat the current best distance are explored. If the index has no internal
+	 * layers the search degenerates to a linear scan of all items.
 	 * </p>
 	 *
 	 * <p>
 	 * Notes and guarantees:
 	 * <ul>
 	 * <li>If the tree contains no items, {@code null} is returned.</li>
-	 * <li>{@code distFn.distance} should return a non-negative scalar; correctness
-	 * of pruning assumes that the function is consistent with geometric distance
-	 * ordering.</li>
+	 * <li>{@code distFn.distance(q, item)} must return a non-negative distance in
+	 * the same units as the coordinates. Pruning relies on distance ordering being
+	 * consistent with Euclidean distance to bounding rectangles.</li>
 	 * <li>The returned object is the single item for which
-	 * {@code distFn.distance(q, item)} is minimal (ties broken by traversal
+	 * {@code distFn.distance(q, item)} is minimal (ties are broken by traversal
 	 * order).</li>
 	 * </ul>
+	 * </p>
 	 *
 	 * @param q      the query coordinate
-	 * @param distFn a callback that computes the distance between {@code q} and an
-	 *               item
+	 * @param distFn a callback that computes the <em>linear</em> distance between
+	 *               {@code q} and an item
 	 * @return the nearest item according to {@code distFn}, or {@code null} if the
 	 *         tree is empty
 	 */
-	@SuppressWarnings("unchecked")
 	public T nearestNeighbor(Coordinate q, DistanceToItem<T> distFn) {
+		return nearestNeighborLinear(q, distFn);
+	}
+
+	/**
+	 * Finds and returns the item nearest to the query point {@code q}, according to
+	 * the user-supplied <em>squared</em> distance function {@code distSqFn}.
+	 *
+	 * <p>
+	 * This variant expects {@code distSqFn.distance(q, item)} to return a squared
+	 * distance (e.g. {@code dx*dx + dy*dy}, etc.). Using squared distances avoids
+	 * the square-root typically required by Euclidean distance while preserving
+	 * ordering.
+	 * </p>
+	 *
+	 * <p>
+	 * The implementation performs a best-first traversal of the tree using
+	 * bounding-box minimum <em>squared</em>-distance pruning; only items and nodes
+	 * that can beat the current best distance are explored. If the index has no
+	 * internal layers the search degenerates to a linear scan of all items.
+	 * </p>
+	 *
+	 * <p>
+	 * Notes and guarantees:
+	 * <ul>
+	 * <li>If the tree contains no items, {@code null} is returned.</li>
+	 * <li>{@code distSqFn.distance(q, item)} must return a non-negative scalar
+	 * whose ordering is consistent with squared Euclidean distance to bounding
+	 * rectangles.</li>
+	 * <li>The returned object is the single item for which
+	 * {@code distSqFn.distance(q, item)} is minimal (ties are broken by traversal
+	 * order).</li>
+	 * </ul>
+	 * </p>
+	 *
+	 * @param q        the query coordinate
+	 * @param distSqFn a callback that computes the <em>squared</em> distance
+	 *                 between {@code q} and an item
+	 * @return the nearest item according to {@code distSqFn}, or {@code null} if
+	 *         the tree is empty
+	 */
+	public T nearestNeighborSq(Coordinate q, DistanceToItem<T> distSqFn) {
+		return nearestNeighborSquared(q, distSqFn);
+	}
+
+	@SuppressWarnings("unchecked")
+	private T nearestNeighborSquared(Coordinate q, DistanceToItem<T> distSqFn) {
 		build();
 		if (numItems == 0) {
 			return null;
@@ -544,20 +588,31 @@ public class HPRtreeX<T> {
 
 		final double qx = q.x, qy = q.y;
 
+		final double[] itemBoundsLocal = this.itemBounds;
+		final Object[] itemValuesLocal = this.itemValues;
+		final double[] nodeBoundsLocal = this.nodeBounds;
+		final int[] lsi = this.layerStartIndex;
+		final int nodeCap = this.nodeCapacity;
+		final int nItems = this.numItems;
+
 		T best = null;
-		double bestDist = Double.POSITIVE_INFINITY;
 		double bestDistSq = Double.POSITIVE_INFINITY;
 
-		// Degenerate case: no internal layers; scan items linearly
-		if (layerStartIndex == null) {
-			for (int i = 0; i < numItems; i++) {
-				T value = (T) itemValues[i];
-				double d = distFn.distance(q, value);
-				if (d < bestDist) {
-					bestDist = d;
-					bestDistSq = d * d;
+		if (lsi == null) {
+			for (int itemIndex = 0; itemIndex < nItems; itemIndex++) {
+				final int o = itemIndex << 2; // *4
+				final double mdSq = pointToRectDistanceSquared(qx, qy, itemBoundsLocal[o], itemBoundsLocal[o + 1], itemBoundsLocal[o + 2],
+						itemBoundsLocal[o + 3]);
+				if (mdSq >= bestDistSq) {
+					continue;
+				}
+
+				final T value = (T) itemValuesLocal[itemIndex];
+				final double dSq = distSqFn.distance(q, value);
+				if (dSq < bestDistSq) {
+					bestDistSq = dSq;
 					best = value;
-					if (bestDist == 0.0) {
+					if (dSq == 0.0) {
 						return best;
 					}
 				}
@@ -565,77 +620,238 @@ public class HPRtreeX<T> {
 			return best;
 		}
 
-		final int topLayer = layerStartIndex.length - 2;
-		final int topLayerSize = layerSize(topLayer);
-		final int nTopNodes = topLayerSize / ENV_SIZE;
-		final PriorityQueue<HEntry> H = new PriorityQueue<>(Math.max(16, nTopNodes), Comparator.comparingDouble(e -> e.minDist));
+		final Scratch sc = tlsScratch.get();
+		final MinHeap H = sc.heap;
+		H.clear();
 
-		// Seed with top-layer nodes; push only if they can beat current best
-		for (int off = 0; off < topLayerSize; off += ENV_SIZE) {
-			double mdSq = mindistToNodeSquared(qx, qy, topLayer, off);
+		final int topLayer = lsi.length - 2;
+		final int topStart = lsi[topLayer];
+		final int topEnd = lsi[topLayer + 1];
+		final int topSize = topEnd - topStart;
+
+		for (int off = 0; off < topSize; off += 4) {
+			final int ni = topStart + off;
+			final double mdSq = pointToRectDistanceSquared(qx, qy, nodeBoundsLocal[ni], nodeBoundsLocal[ni + 1], nodeBoundsLocal[ni + 2],
+					nodeBoundsLocal[ni + 3]);
 			if (mdSq < bestDistSq) {
-				H.add(new HEntry(topLayer, off, mdSq));
+				H.push(mdSq, topLayer, off);
 			}
 		}
 
 		while (!H.isEmpty()) {
-			HEntry r = H.poll();
-			if (r.minDist >= bestDistSq) {
-				break; // cannot improve best
+			final double rMin = H.peekKey();
+			if (rMin >= bestDistSq) {
+				break;
 			}
 
-			if (r.layerIndex == 0) {
-				// Leaf-adjacent: scan items in this node
-				int blockStart = (r.nodeOffset / ENV_SIZE) * nodeCapacity;
-				for (int i = 0; i < nodeCapacity; i++) {
-					int itemIndex = blockStart + i;
-					if (itemIndex >= numItems) {
+			final int layer = H.peekLayer();
+			final int off = H.peekOff();
+			H.pop();
+
+			if (layer == 0) {
+				final int blockStart = (off >>> 2) * nodeCap; // (off/4)*nodeCap
+				for (int i = 0; i < nodeCap; i++) {
+					final int itemIndex = blockStart + i;
+					if (itemIndex >= nItems) {
 						break;
 					}
-					T value = (T) itemValues[itemIndex];
-					double d = distFn.distance(q, value);
-					if (d < bestDist) {
-						bestDist = d;
-						bestDistSq = d * d;
+
+					final int o = itemIndex << 2;
+					final double itemMdSq = pointToRectDistanceSquared(qx, qy, itemBoundsLocal[o], itemBoundsLocal[o + 1], itemBoundsLocal[o + 2],
+							itemBoundsLocal[o + 3]);
+					if (itemMdSq >= bestDistSq) {
+						continue;
+					}
+
+					final T value = (T) itemValuesLocal[itemIndex];
+					final double dSq = distSqFn.distance(q, value);
+					if (dSq < bestDistSq) {
+						bestDistSq = dSq;
 						best = value;
-						if (bestDist == 0.0) {
+						if (dSq == 0.0) {
 							return best;
 						}
 					}
 				}
 			} else {
-				// Intermediate: push child MBRs that can still beat best
-				int childLayer = r.layerIndex - 1;
-				int childLayerStart = layerStartIndex[childLayer];
-				int childLayerEnd = layerStartIndex[childLayer + 1];
-				int blockStart = r.nodeOffset * nodeCapacity;
-				for (int i = 0; i < nodeCapacity; i++) {
-					int childNodeOffset = blockStart + ENV_SIZE * i;
-					if (childLayerStart + childNodeOffset >= childLayerEnd) {
+				final int childLayer = layer - 1;
+				final int childStart = lsi[childLayer];
+				final int childEnd = lsi[childLayer + 1];
+				final int childSize = childEnd - childStart;
+
+				final int blockStart = off * nodeCap;
+				for (int i = 0; i < nodeCap; i++) {
+					final int childOff = blockStart + (i << 2); // +4*i
+					if (childOff >= childSize) {
 						break;
 					}
-					double mdSq = mindistToNodeSquared(qx, qy, childLayer, childNodeOffset);
+
+					final int ni = childStart + childOff;
+					final double mdSq = pointToRectDistanceSquared(qx, qy, nodeBoundsLocal[ni], nodeBoundsLocal[ni + 1], nodeBoundsLocal[ni + 2],
+							nodeBoundsLocal[ni + 3]);
 					if (mdSq < bestDistSq) {
-						H.add(new HEntry(childLayer, childNodeOffset, mdSq));
+						H.push(mdSq, childLayer, childOff);
 					}
 				}
 			}
 		}
+
 		return best;
 	}
 
+	@SuppressWarnings("unchecked")
+	private T nearestNeighborLinear(Coordinate q, DistanceToItem<T> distFn) {
+		build();
+		if (numItems == 0) {
+			return null;
+		}
+
+		final double qx = q.x, qy = q.y;
+
+		final double[] itemBoundsLocal = this.itemBounds;
+		final Object[] itemValuesLocal = this.itemValues;
+		final double[] nodeBoundsLocal = this.nodeBounds;
+		final int[] lsi = this.layerStartIndex;
+		final int nodeCap = this.nodeCapacity;
+		final int nItems = this.numItems;
+
+		T best = null;
+		double bestDistSq = Double.POSITIVE_INFINITY;
+
+		// Small tree: linear scan (but still can use per-item envelope pruning)
+		if (lsi == null) {
+			for (int itemIndex = 0; itemIndex < nItems; itemIndex++) {
+				final int o = itemIndex << 2; // *4
+				final double mdSq = pointToRectDistanceSquared(qx, qy, itemBoundsLocal[o], itemBoundsLocal[o + 1], itemBoundsLocal[o + 2],
+						itemBoundsLocal[o + 3]);
+
+				if (mdSq >= bestDistSq) {
+					continue;
+				}
+
+				final T value = (T) itemValuesLocal[itemIndex];
+				final double d = distFn.distance(q, value); // linear distance
+				final double dSq = d * d; // compare using squared
+
+				if (dSq < bestDistSq) {
+					bestDistSq = dSq;
+					best = value;
+					if (dSq == 0.0) {
+						return best;
+					}
+				}
+			}
+			return best;
+		}
+
+		final Scratch sc = tlsScratch.get();
+		final MinHeap H = sc.heap;
+		H.clear();
+
+		final int topLayer = lsi.length - 2;
+		final int topStart = lsi[topLayer];
+		final int topEnd = lsi[topLayer + 1];
+		final int topSize = topEnd - topStart;
+
+		// seed heap with top-layer nodes
+		for (int off = 0; off < topSize; off += 4) {
+			final int ni = topStart + off;
+			final double mdSq = pointToRectDistanceSquared(qx, qy, nodeBoundsLocal[ni], nodeBoundsLocal[ni + 1], nodeBoundsLocal[ni + 2],
+					nodeBoundsLocal[ni + 3]);
+
+			if (mdSq < bestDistSq) {
+				H.push(mdSq, topLayer, off);
+			}
+		}
+
+		while (!H.isEmpty()) {
+			final double rMin = H.peekKey();
+			if (rMin >= bestDistSq) {
+				break;
+			}
+
+			final int layer = H.peekLayer();
+			final int off = H.peekOff();
+			H.pop();
+
+			if (layer == 0) {
+				// Leaf-adjacent: scan items in this node
+				final int blockStart = (off >>> 2) * nodeCap; // (off/4)*nodeCap
+				for (int i = 0; i < nodeCap; i++) {
+					final int itemIndex = blockStart + i;
+					if (itemIndex >= nItems) {
+						break;
+					}
+
+					final int o = itemIndex << 2;
+					final double itemMdSq = pointToRectDistanceSquared(qx, qy, itemBoundsLocal[o], itemBoundsLocal[o + 1], itemBoundsLocal[o + 2],
+							itemBoundsLocal[o + 3]);
+
+					if (itemMdSq >= bestDistSq) {
+						continue;
+					}
+
+					final T value = (T) itemValuesLocal[itemIndex];
+					final double d = distFn.distance(q, value); // linear distance
+					final double dSq = d * d;
+
+					if (dSq < bestDistSq) {
+						bestDistSq = dSq;
+						best = value;
+						if (dSq == 0.0) {
+							return best;
+						}
+					}
+				}
+			} else {
+				// Intermediate: push children that can beat current best
+				final int childLayer = layer - 1;
+				final int childStart = lsi[childLayer];
+				final int childEnd = lsi[childLayer + 1];
+				final int childSize = childEnd - childStart;
+
+				final int blockStart = off * nodeCap;
+				for (int i = 0; i < nodeCap; i++) {
+					final int childOff = blockStart + (i << 2); // +4*i
+					if (childOff >= childSize) {
+						break;
+					}
+
+					final int ni = childStart + childOff;
+					final double mdSq = pointToRectDistanceSquared(qx, qy, nodeBoundsLocal[ni], nodeBoundsLocal[ni + 1], nodeBoundsLocal[ni + 2],
+							nodeBoundsLocal[ni + 3]);
+
+					if (mdSq < bestDistSq) {
+						H.push(mdSq, childLayer, childOff);
+					}
+				}
+			}
+		}
+
+		return best;
+	}
+
+	private double mindistToItemSquared(double qx, double qy, int itemIndex) {
+		int o = itemIndex * ENV_SIZE;
+		double minX = itemBounds[o];
+		double minY = itemBounds[o + 1];
+		double maxX = itemBounds[o + 2];
+		double maxY = itemBounds[o + 3];
+		return pointToRectDistanceSquared(qx, qy, minX, minY, maxX, maxY);
+	}
+
 	/**
-	 * Finds and returns all items whose distance to the query point {@code q} is
-	 * less than or equal to the supplied {@code maxDistance}, according to the
+	 * Finds and returns all items whose <em>linear</em> distance to the query point
+	 * {@code q} is less than or equal to {@code maxDistance}, according to the
 	 * user-supplied distance function {@code distFn}.
 	 *
 	 * <p>
-	 * The {@link DistanceToItem} callback is used to compute the distance from the
-	 * query coordinate to a stored item. The implementation performs a depth-first
-	 * traversal of the tree using bounding-box minimum-distance pruning: only items
-	 * and nodes whose minimum possible distance to {@code q} is ≤
-	 * {@code maxDistance} are explored. If the index has no internal layers the
-	 * search degenerates to a linear scan of all items.
+	 * The {@link DistanceToItem} callback is used to compute the (non-squared)
+	 * distance from the query coordinate to a stored item. The implementation
+	 * performs a depth-first traversal of the tree using bounding-box
+	 * minimum-distance pruning: only items and nodes whose minimum possible
+	 * distance to {@code q} is ≤ {@code maxDistance} are explored. If the index has
+	 * no internal layers the search degenerates to a linear scan of all items.
 	 * </p>
 	 *
 	 * <p>
@@ -644,28 +860,85 @@ public class HPRtreeX<T> {
 	 * <li>If the tree contains no items, an empty list is returned.</li>
 	 * <li>If {@code maxDistance} is negative or NaN, an empty list is
 	 * returned.</li>
-	 * <li>{@code distFn.distance} should return a non-negative scalar; correctness
-	 * of pruning assumes that the function is consistent with geometric distance
-	 * ordering.</li>
+	 * <li>{@code distFn.distance(q, item)} must return a non-negative distance in
+	 * the same units as the coordinates. Pruning assumes ordering consistent with
+	 * Euclidean distance to bounding rectangles.</li>
 	 * <li>All items for which {@code distFn.distance(q, item) <= maxDistance} will
-	 * be returned (no false negatives); items with distance > maxDistance will not
-	 * be returned (no false positives).</li>
-	 * <li>The returned list is not sorted by distance; its iteration order follows
-	 * the traversal order used by the algorithm.</li>
+	 * be returned (no false negatives); items with distance &gt;
+	 * {@code maxDistance} will not be returned (no false positives).</li>
+	 * <li>The returned list is not sorted by distance; iteration order follows the
+	 * traversal order used by the algorithm.</li>
 	 * </ul>
+	 * </p>
 	 *
 	 * @param q           the query coordinate
-	 * @param maxDistance the inclusive distance threshold; must be non-negative to
-	 *                    return any items
-	 * @param distFn      a callback that computes the distance between {@code q}
-	 *                    and an item
+	 * @param maxDistance the inclusive <em>linear</em> distance threshold; must be
+	 *                    non-negative to return any items
+	 * @param distFn      a callback that computes the <em>linear</em> distance
+	 *                    between {@code q} and an item
 	 * @return a list of items whose distance to {@code q} is less than or equal to
-	 *         {@code maxDistance}; an empty list if none match or if the tree is
-	 *         empty or {@code maxDistance} is negative/NaN
+	 *         {@code maxDistance}; an empty list if none match, the tree is empty,
+	 *         or {@code maxDistance} is negative/NaN
 	 * @see DistanceToItem
 	 */
-	@SuppressWarnings("unchecked")
 	public List<T> rangeQuery(Coordinate q, double maxDistance, DistanceToItem<T> distFn) {
+		return rangeQueryInternal(q, maxDistance, distFn, false);
+	}
+
+	/**
+	 * Finds and returns all items whose <em>squared</em> distance to the query
+	 * point {@code q} is less than or equal to {@code maxDistanceSq}, according to
+	 * the user-supplied squared-distance function {@code distSqFn}.
+	 *
+	 * <p>
+	 * This variant expects {@code distSqFn.distance(q, item)} to return a squared
+	 * distance (e.g. {@code dx*dx + dy*dy}). Using squared distances avoids the
+	 * square-root typically required by Euclidean distance while preserving
+	 * ordering.
+	 * </p>
+	 *
+	 * <p>
+	 * The implementation performs a depth-first traversal of the tree using
+	 * bounding-box minimum <em>squared</em>-distance pruning: only items and nodes
+	 * whose minimum possible squared distance to {@code q} is ≤
+	 * {@code maxDistanceSq} are explored. If the index has no internal layers the
+	 * search degenerates to a linear scan of all items.
+	 * </p>
+	 *
+	 * <p>
+	 * Notes and guarantees:
+	 * <ul>
+	 * <li>If the tree contains no items, an empty list is returned.</li>
+	 * <li>If {@code maxDistanceSq} is negative or NaN, an empty list is
+	 * returned.</li>
+	 * <li>{@code distSqFn.distance(q, item)} must return a non-negative scalar
+	 * whose ordering is consistent with squared Euclidean distance to bounding
+	 * rectangles.</li>
+	 * <li>All items for which {@code distSqFn.distance(q, item) <= maxDistanceSq}
+	 * will be returned (no false negatives); items with distance &gt;
+	 * {@code maxDistanceSq} will not be returned (no false positives).</li>
+	 * <li>The returned list is not sorted by distance; iteration order follows the
+	 * traversal order used by the algorithm.</li>
+	 * </ul>
+	 * </p>
+	 *
+	 * @param q             the query coordinate
+	 * @param maxDistanceSq the inclusive <em>squared</em> distance threshold; must
+	 *                      be non-negative to return any items
+	 * @param distSqFn      a callback that computes the <em>squared</em> distance
+	 *                      between {@code q} and an item
+	 * @return a list of items whose squared distance to {@code q} is less than or
+	 *         equal to {@code maxDistanceSq}; an empty list if none match, the tree
+	 *         is empty, or {@code maxDistanceSq} is negative/NaN
+	 * @see DistanceToItem
+	 */
+	public List<T> rangeQuerySq(Coordinate q, double maxDistanceSq, DistanceToItem<T> distSqFn) {
+		// distSqFn returns SQUARED distance; maxDistanceSq is SQUARED
+		return rangeQueryInternal(q, maxDistanceSq, distSqFn, true);
+	}
+
+	@SuppressWarnings("unchecked")
+	private List<T> rangeQueryInternal(Coordinate q, double maxDistance, DistanceToItem<T> distFn, boolean isSquared) {
 		build();
 		List<T> result = new ArrayList<>();
 		if (numItems == 0 || !(maxDistance >= 0.0)) {
@@ -673,22 +946,30 @@ public class HPRtreeX<T> {
 		}
 
 		final double qx = q.x, qy = q.y;
-		final double threshold = maxDistance;
-		final double thresholdSq = threshold * threshold;
+
+		// IMPORTANT: interpret threshold according to isSquared
+		final double thresholdSq = isSquared ? maxDistance : maxDistance * maxDistance;
 
 		// Degenerate case: no internal layers; scan items linearly
 		if (layerStartIndex == null) {
-			for (int i = 0; i < numItems; i++) {
-				T value = (T) itemValues[i];
-				if (distFn.distance(q, value) <= threshold) {
+			for (int itemIndex = 0; itemIndex < numItems; itemIndex++) {
+				// cheap prune by item envelope
+				double itemMdSq = mindistToItemSquared(qx, qy, itemIndex);
+				if (itemMdSq > thresholdSq) {
+					continue;
+				}
+
+				T value = (T) itemValues[itemIndex];
+				double d = distFn.distance(q, value);
+				double dSq = isSquared ? d : d * d;
+				if (dSq <= thresholdSq) {
 					result.add(value);
 				}
 			}
 			return result;
 		}
 
-		// Use a primitive stack for (layerIndex, nodeOffset) pairs to minimize
-		// allocation
+		// primitive stack to minimise allocation
 		int[] stackLayer = new int[32];
 		int[] stackOff = new int[32];
 		int sp = 0;
@@ -722,8 +1003,17 @@ public class HPRtreeX<T> {
 					if (itemIndex >= numItems) {
 						break;
 					}
+
+					// cheap prune by item envelope
+					double itemMdSq = mindistToItemSquared(qx, qy, itemIndex);
+					if (itemMdSq > thresholdSq) {
+						continue;
+					}
+
 					T value = (T) itemValues[itemIndex];
-					if (distFn.distance(q, value) <= threshold) {
+					double d = distFn.distance(q, value);
+					double dSq = isSquared ? d : d * d;
+					if (dSq <= thresholdSq) {
 						result.add(value);
 					}
 				}
@@ -733,11 +1023,13 @@ public class HPRtreeX<T> {
 				int childLayerStart = layerStartIndex[childLayer];
 				int childLayerEnd = layerStartIndex[childLayer + 1];
 				int blockStart = off * nodeCapacity;
+
 				for (int i = 0; i < nodeCapacity; i++) {
 					int childOff = blockStart + ENV_SIZE * i;
 					if (childLayerStart + childOff >= childLayerEnd) {
 						break;
 					}
+
 					double mdSq = mindistToNodeSquared(qx, qy, childLayer, childOff);
 					if (mdSq <= thresholdSq) {
 						if (sp == stackLayer.length) {
@@ -764,7 +1056,6 @@ public class HPRtreeX<T> {
 		return pointToRectDistanceSquared(qx, qy, minX, minY, maxX, maxY);
 	}
 
-	// Rename: squared distance, no sqrt
 	private static double pointToRectDistanceSquared(double qx, double qy, double minX, double minY, double maxX, double maxY) {
 		double dx = 0.0;
 		if (qx < minX) {
@@ -787,6 +1078,14 @@ public class HPRtreeX<T> {
 	 * Functional interface used to compute the distance between a query coordinate
 	 * and an item stored in the tree.
 	 *
+	 * <p>
+	 * <b>Example</b> (lambda):
+	 * </p>
+	 * 
+	 * <pre>
+	 * var dist = (q, item) -> q.distance(item.coord());
+	 * </pre>
+	 *
 	 * @param <T> item type stored in the tree
 	 */
 	@FunctionalInterface
@@ -796,7 +1095,7 @@ public class HPRtreeX<T> {
 		 * {@code item}.
 		 *
 		 * <p>
-		 * Implementations should return a non-negative value. The tree uses these
+		 * Implementations should return a non-negative value. The tre e uses these
 		 * distances for ranking candidates during nearest-neighbor search; for best
 		 * performance the function should be inexpensive to compute.
 		 * </p>
@@ -852,6 +1151,125 @@ public class HPRtreeX<T> {
 			this.layerIndex = layerIndex;
 			this.nodeOffset = nodeOffset;
 			this.minDist = minDistSq;
+		}
+	}
+
+	private static final class Scratch {
+		final MinHeap heap;
+		int[] stackLayer;
+		int[] stackOff;
+		final ArrayList<Object> out; // optional reusable result list
+
+		Scratch(int heapCap, int stackCap) {
+			this.heap = new MinHeap(heapCap);
+			this.stackLayer = new int[stackCap];
+			this.stackOff = new int[stackCap];
+			this.out = new ArrayList<>(64);
+		}
+
+		void ensureStackCap(int need) {
+			if (need <= stackLayer.length) {
+				return;
+			}
+			int n = Integer.highestOneBit(need - 1) << 1;
+			stackLayer = Arrays.copyOf(stackLayer, n);
+			stackOff = Arrays.copyOf(stackOff, n);
+		}
+	}
+
+	private static final class MinHeap {
+		double[] key; // minDistSq
+		int[] layer;
+		int[] off;
+		int size;
+
+		MinHeap(int cap) {
+			key = new double[Math.max(8, cap)];
+			layer = new int[key.length];
+			off = new int[key.length];
+		}
+
+		boolean isEmpty() {
+			return size == 0;
+		}
+
+		void clear() {
+			size = 0;
+		}
+
+		void push(double k, int l, int o) {
+			int i = size++;
+			if (i == key.length) {
+				grow();
+			}
+			key[i] = k;
+			layer[i] = l;
+			off[i] = o;
+			siftUp(i);
+		}
+
+		void grow() {
+			int n = key.length << 1;
+			key = Arrays.copyOf(key, n);
+			layer = Arrays.copyOf(layer, n);
+			off = Arrays.copyOf(off, n);
+		}
+
+		void siftUp(int i) {
+			while (i > 0) {
+				int p = (i - 1) >>> 1;
+				if (key[p] <= key[i]) {
+					return;
+				}
+				swap(i, p);
+				i = p;
+			}
+		}
+
+		void siftDown(int i) {
+			int half = size >>> 1;
+			while (i < half) {
+				int l = (i << 1) + 1;
+				int r = l + 1;
+				int m = (r < size && key[r] < key[l]) ? r : l;
+				if (key[i] <= key[m]) {
+					return;
+				}
+				swap(i, m);
+				i = m;
+			}
+		}
+
+		void swap(int a, int b) {
+			double tk = key[a];
+			key[a] = key[b];
+			key[b] = tk;
+			int tl = layer[a];
+			layer[a] = layer[b];
+			layer[b] = tl;
+			int to = off[a];
+			off[a] = off[b];
+			off[b] = to;
+		}
+
+		double peekKey() {
+			return key[0];
+		}
+
+		int peekLayer() {
+			return layer[0];
+		}
+
+		int peekOff() {
+			return off[0];
+		}
+
+		void pop() {
+			int last = --size;
+			key[0] = key[last];
+			layer[0] = layer[last];
+			off[0] = off[last];
+			siftDown(0);
 		}
 	}
 }

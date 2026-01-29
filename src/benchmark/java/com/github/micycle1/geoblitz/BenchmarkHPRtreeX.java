@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.SplittableRandom;
 import java.util.concurrent.TimeUnit;
 
+import org.locationtech.jts.algorithm.Distance;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.Envelope;
 import org.locationtech.jts.geom.LineSegment;
@@ -104,7 +105,7 @@ public class BenchmarkHPRtreeX {
 
 		// Distance functions
 		pointDistFn = (q, item) -> q.distance(item);
-		segmentDistFn = (q, seg) -> seg.distance(q);
+		segmentDistFn = (q, seg) -> Distance.pointToSegmentSq(q, seg.p0, seg.p1);
 
 		// Touch once to ensure any lazy paths are exercised before measurement
 		if (!itemsPts.isEmpty()) {
@@ -112,8 +113,8 @@ public class BenchmarkHPRtreeX {
 			treePts.rangeQuery(queryPts[0], radius, pointDistFn);
 		}
 		if (!itemsSegs.isEmpty()) {
-			treeSegs.nearestNeighbor(queryPtsForSegs[0], segmentDistFn);
-			treeSegs.rangeQuery(queryPtsForSegs[0], radius, segmentDistFn);
+			treeSegs.nearestNeighborSq(queryPtsForSegs[0], segmentDistFn);
+			treeSegs.rangeQuerySq(queryPtsForSegs[0], radius, segmentDistFn);
 		}
 	}
 
@@ -219,7 +220,7 @@ public class BenchmarkHPRtreeX {
 	@OperationsPerInvocation(numQueries)
 	public void b3rangeTreeSegments(Blackhole bh) {
 		for (int i = 0; i < numQueries; i++) {
-			bh.consume(treeSegs.rangeQuery(queryPtsForSegs[i], radius, segmentDistFn));
+			bh.consume(treeSegs.rangeQuerySq(queryPtsForSegs[i], radius*radius, segmentDistFn));
 		}
 	}
 
