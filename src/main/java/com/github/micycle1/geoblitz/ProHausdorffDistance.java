@@ -47,7 +47,7 @@ public final class ProHausdorffDistance {
 	 *                         with the smallest projections AND k points with the
 	 *                         largest projections (≈ 2 * alpha * n per direction,
 	 *                         before unions across directions). Typical values:
-	 *                         0.005–0.05 (often 0.01).
+	 *                         0.01–0.1.
 	 * @param maxSegmentLength if > 0, densifies geometry segments so consecutive
 	 *                         sample points are at most this far apart (in geometry
 	 *                         units). If &lt;= 0, uses only the geometry's existing
@@ -128,7 +128,8 @@ public final class ProHausdorffDistance {
 
 			double segLen = Math.sqrt(segLenSq);
 			int steps = (int) Math.ceil(segLen / maxSegmentLength);
-			// Insert intermediate points (exclude endpoint; it will be added as next vertex)
+			// Insert intermediate points (exclude endpoint; it will be added as next
+			// vertex)
 			if (steps > 1) {
 				double stepInv = 1.0 / steps;
 				for (int s = 1; s < steps; s++) {
