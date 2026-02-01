@@ -24,6 +24,7 @@ import org.locationtech.jts.geom.Polygon;
  * @author Michael Carleton
  */
 final class YStripesPointInPolygonLocator implements PointOnGeometryLocator {
+
 	private final RingIndex shell;
 	private final RingIndex[] holes;
 
@@ -52,9 +53,11 @@ final class YStripesPointInPolygonLocator implements PointOnGeometryLocator {
 		}
 		int loc = shell.locateYStripes(x, y);
 		if (loc != Location.INTERIOR) {
+			// certainly outside
 			return loc; // BOUNDARY or EXTERIOR
 		}
 
+		// inside the boundary, but might be in a hole
 		for (RingIndex hole : holes) {
 			if (!hole.coversPointFast(x, y)) {
 				continue;
@@ -67,6 +70,7 @@ final class YStripesPointInPolygonLocator implements PointOnGeometryLocator {
 				return Location.EXTERIOR; // inside a hole
 			}
 		}
+		// not inside any holes!
 		return Location.INTERIOR;
 	}
 

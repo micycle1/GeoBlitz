@@ -4,7 +4,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>com.github.micycle1</groupId>
 	<artifactId>geoblitz</artifactId>
-	<version>0.9.4</version>
+	<version>0.9.5</version>
 	<name>GeoBlitz</name>
 
 	<properties>
@@ -82,7 +82,7 @@
 				<executions>
 					<execution>
 						<id>attach-sources</id>
-						<phase>deploy</phase>
+						<phase>package</phase>
 						<goals>
 							<goal>jar-no-fork</goal>
 						</goals>

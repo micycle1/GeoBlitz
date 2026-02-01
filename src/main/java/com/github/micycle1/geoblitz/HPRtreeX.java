@@ -526,7 +526,6 @@ public class HPRtreeX<T> {
 	 * {@code distFn.distance(q, item)} is minimal (ties are broken by traversal
 	 * order).</li>
 	 * </ul>
-	 * </p>
 	 *
 	 * @param q      the query coordinate
 	 * @param distFn a callback that computes the <em>linear</em> distance between
@@ -567,7 +566,6 @@ public class HPRtreeX<T> {
 	 * {@code distSqFn.distance(q, item)} is minimal (ties are broken by traversal
 	 * order).</li>
 	 * </ul>
-	 * </p>
 	 *
 	 * @param q        the query coordinate
 	 * @param distSqFn a callback that computes the <em>squared</em> distance
@@ -869,7 +867,6 @@ public class HPRtreeX<T> {
 	 * <li>The returned list is not sorted by distance; iteration order follows the
 	 * traversal order used by the algorithm.</li>
 	 * </ul>
-	 * </p>
 	 *
 	 * @param q           the query coordinate
 	 * @param maxDistance the inclusive <em>linear</em> distance threshold; must be
@@ -920,7 +917,6 @@ public class HPRtreeX<T> {
 	 * <li>The returned list is not sorted by distance; iteration order follows the
 	 * traversal order used by the algorithm.</li>
 	 * </ul>
-	 * </p>
 	 *
 	 * @param q             the query coordinate
 	 * @param maxDistanceSq the inclusive <em>squared</em> distance threshold; must
@@ -1142,29 +1138,15 @@ public class HPRtreeX<T> {
 		}
 	}
 
-	private static final class HEntry {
-		final int layerIndex;
-		final int nodeOffset; // offset in doubles within the layer (multiple of 4)
-		final double minDist; // actually squared distance
-
-		HEntry(int layerIndex, int nodeOffset, double minDistSq) {
-			this.layerIndex = layerIndex;
-			this.nodeOffset = nodeOffset;
-			this.minDist = minDistSq;
-		}
-	}
-
 	private static final class Scratch {
 		final MinHeap heap;
 		int[] stackLayer;
 		int[] stackOff;
-		final ArrayList<Object> out; // optional reusable result list
 
 		Scratch(int heapCap, int stackCap) {
 			this.heap = new MinHeap(heapCap);
 			this.stackLayer = new int[stackCap];
 			this.stackOff = new int[stackCap];
-			this.out = new ArrayList<>(64);
 		}
 
 		void ensureStackCap(int need) {

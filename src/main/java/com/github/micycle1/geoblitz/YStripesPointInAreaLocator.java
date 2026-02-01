@@ -17,9 +17,8 @@ import org.locationtech.jts.geom.Polygon;
  * <p>
  * Each polygonal component of the input Geometry is handled by a
  * YStripesPointInPolygonLocator; when multiple polygonal components are present
- * these per-polygon locators are organized in an STRtree for efficient
- * candidate selection. A single-polygon input uses a direct fast-path, and
- * geometries with no polygonal elements always report EXTERIOR.
+ * these per-polygon locators are organized in an R-tree for efficient candidate
+ * selection.
  * <p>
  * Instances are immutable and safe for concurrent use, and are intended for
  * repeated point-in-area queries against a fixed Geometry.
@@ -28,6 +27,7 @@ import org.locationtech.jts.geom.Polygon;
  * @see YStripesPointInPolygonLocator
  */
 public final class YStripesPointInAreaLocator implements PointOnGeometryLocator {
+
 	private final Envelope env;
 	private final PointOnGeometryLocator single;
 	private final HPRtreeX<PointOnGeometryLocator> tree;
@@ -95,7 +95,7 @@ public final class YStripesPointInAreaLocator implements PointOnGeometryLocator 
 			return Location.EXTERIOR;
 		}
 
-		// STRtree candidate lookup
+		// tree candidate lookup
 		qEnv.init(p);
 		List<PointOnGeometryLocator> cands = tree.query(qEnv);
 
