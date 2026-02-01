@@ -12,7 +12,7 @@ import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.operation.distance.IndexedFacetDistance;
 
-class IndexedLinearDistanceTest {
+class PointDistanceIndexTest {
 
 	private static final double TOLERANCE = 1e-9;
 	private final GeometryFactory gf = new GeometryFactory();
@@ -23,7 +23,7 @@ class IndexedLinearDistanceTest {
 		// Create a random complex polygon
 		Geometry polygon = GeomMaker.make(100, seed);
 
-		IndexedLinearDistance ild = new IndexedLinearDistance(polygon);
+		PointDistanceIndex ild = new PointDistanceIndex(polygon);
 		IndexedFacetDistance ifd = new IndexedFacetDistance(polygon);
 
 		// Random query points
@@ -44,7 +44,7 @@ class IndexedLinearDistanceTest {
 	@Test
 	void testSignedDistance() {
 		Geometry poly = GeomMaker.make(50, 1337); // Generates a polygon
-		IndexedLinearDistance ild = new IndexedLinearDistance(poly);
+		PointDistanceIndex ild = new PointDistanceIndex(poly);
 
 		// Internal point
 		Point centroid = poly.getCentroid();

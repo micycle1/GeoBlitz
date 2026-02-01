@@ -66,10 +66,12 @@ Projection-based Hausdorff Distance approximation. Implements [ProHD](https://ww
 - Extremely fast estimate of the true Hausdorff distance.
 - Adjustable `alpha` parameter controls accuracy vs speed.
 
-#### `IndexedLinearDistance`
-Fast exact distance queries from points to linear components of a geometry.
-- Uses `HPRtree` to index "facets" (small multi-segment chunks) rather than individual segments, reducing index size and depth.
-- Supports both **unsigned** (distance to nearest line) and **signed** (negative if outside polygon) distance.
+#### `PointDistanceIndex`
+Fast exact distance queries from points to a boundary and optional obstacles, with optional signed distance determined by the boundary.
+
+- Uses `HPRtree` to index line “facets” (small multi-segment chunks) rather than individual segments, reducing index size and depth.
+- Targets include boundary rings plus obstacle lines and points.
+- Supports unsigned distance (always non-negative) and optional signed distance (negative if outside the boundary).
 
 
 #### `EndpointSnapper`
@@ -91,7 +93,7 @@ Endpoint-only snapping for near-coverage linework (with optional polygon-vertex 
 | SegmentVoronoiIndex | IndexedFacetDistance | ~4x (dataset & sampling dependent) |
 | YStripesPointInAreaLocator | IndexedPointInAreaLocator | ~4x |
 | ProHausdorffDistance | DiscreteHausdorffDistance | 10x+ |
-| IndexedLinearDistance | IndexedFacetDistance | ~2x |
+| PointDistanceIndex | IndexedFacetDistance | ~2x |
 
 
 ### Benchmarks

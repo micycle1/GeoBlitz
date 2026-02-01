@@ -28,11 +28,11 @@ import org.openjdk.jmh.infra.Blackhole;
 @Warmup(iterations = 5, time = 1)
 @Measurement(iterations = 5, time = 1)
 @Fork(value = 1, jvmArgsAppend = { "-Xms1g", "-Xmx2g" })
-public class BenchmarkIndexedLinearDistance {
+public class BenchmarkPointDistanceIndex {
 
     private Geometry geometry;
     private Coordinate[] queryPoints;
-    private IndexedLinearDistance ild;
+    private PointDistanceIndex ild;
     private IndexedFacetDistance ifd;
 
     private static final int NUM_QUERIES = 10_000;
@@ -47,7 +47,7 @@ public class BenchmarkIndexedLinearDistance {
         geometry = GeomMaker.make(nPoints, seed);
 
         // Initialize both indexes
-        ild = new IndexedLinearDistance(geometry);
+        ild = new PointDistanceIndex(geometry);
         ifd = new IndexedFacetDistance(geometry);
 
         // Generate random query points
@@ -72,7 +72,7 @@ public class BenchmarkIndexedLinearDistance {
 
     @Benchmark
     @OperationsPerInvocation(NUM_QUERIES)
-    public void benchIndexedLinearDistance(Blackhole bh) {
+    public void benchPointDistanceIndex(Blackhole bh) {
         for (Coordinate c : queryPoints) {
             bh.consume(ild.unsignedDistance(c));
         }
