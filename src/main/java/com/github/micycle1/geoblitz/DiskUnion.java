@@ -19,8 +19,11 @@ import java.util.stream.Collectors;
 public final class DiskUnion {
 
 	static final class Disk {
+		/** Stable identifier for this disk. */
 		public final int id;
+		/** Center coordinate (z ignored). */
 		public final Coordinate c;
+		/** Radius. */
 		public final double r;
 
 		/**
@@ -46,6 +49,7 @@ public final class DiskUnion {
 	 * A boundary arc of the union, oriented so that union interior is on the left.
 	 */
 	static final class Arc {
+		/** Disk that this arc lies on. */
 		public final Disk circle;
 		/** start angle in [0, 2π) */
 		public final double a0;
@@ -90,6 +94,7 @@ public final class DiskUnion {
 
 	/** One closed boundary component: a cyclic list of arcs. */
 	static final class ArcCycle {
+		/** Arcs in CCW order forming a closed cycle. */
 		public final List<Arc> arcs;
 
 		ArcCycle(List<Arc> arcs) {
@@ -99,6 +104,7 @@ public final class DiskUnion {
 
 	/** Result: boundary as arc-cycles (outer shells + holes). */
 	public static final class ArcBoundary {
+		/** Closed boundary cycles (outer shells and holes). */
 		public final List<ArcCycle> cycles;
 
 		ArcBoundary(List<ArcCycle> cycles) {
@@ -395,8 +401,6 @@ public final class DiskUnion {
 		return gf.createMultiPolygon(polys.toArray(new Polygon[0]));
 	}
 
-	// ---------------------------- Stitching helpers ----------------------------
-
 	private static Arc chooseNextArc(double incomingDir, List<Arc> outs, Set<Arc> used) {
 		Arc best = null;
 		double bestDelta = Double.POSITIVE_INFINITY;
@@ -415,8 +419,6 @@ public final class DiskUnion {
 		}
 		return best;
 	}
-
-	// ---------------------------- Coverage tests ----------------------------
 
 	private static boolean isPointCoveredByOtherDisk(Disk self, Coordinate p, HPRtreeX<Disk> index, double eps) {
 		Envelope pe = new Envelope(p);
@@ -455,8 +457,6 @@ public final class DiskUnion {
 		});
 		return covered[0];
 	}
-
-	// ---------------------------- Circle-circle relation---------
 
 	private enum RelationType {
 		/** The circles do not touch or overlap. */
@@ -549,8 +549,6 @@ public final class DiskUnion {
 		return new CircleRelation(RelationType.SECANT, p1, p2);
 	}
 
-	// ---------------------------- Angle/arc utilities ----------------------------
-
 	private static final double TWO_PI = Math.PI * 2.0;
 	/** Min angular tolerance (rad) for radius-based angle eps. */
 	private static final double EPS_ANGLE_MIN = 1e-12;
@@ -622,8 +620,6 @@ public final class DiskUnion {
 		return out;
 	}
 
-	// ---------------------------- Snapping nodes ----------------------------
-
 	static final class SnapVertex {
 		final long qx, qy; // quantized grid key
 		final Coordinate coord; // representative coordinate
@@ -652,35 +648,35 @@ public final class DiskUnion {
 
 	private static final class VertexSnapper {
 		private final double snapTol;
-		private final Map<Long, SnapVertex> vertices = new HashMap<>();
+		private final Map<SnapVertex, SnapVertex> vertices = new HashMap<>();
+		private Double originX;
+		private Double originY;
 
 		VertexSnapper(double eps) {
 			this.snapTol = eps <= 0 ? EPS_SNAP_FALLBACK : eps;
 		}
 
 		SnapVertex node(Coordinate p) {
-			long qx = quantize(p.x);
-			long qy = quantize(p.y);
-			long key = interleave(qx, qy);
+			if (originX == null) {
+				originX = p.x;
+				originY = p.y;
+			}
+			long qx = quantize(p.x, originX);
+			long qy = quantize(p.y, originY);
+			SnapVertex key = new SnapVertex(qx, qy, null);
 			SnapVertex n = vertices.get(key);
 			if (n != null)
 				return n;
 			SnapVertex created = new SnapVertex(qx, qy, new Coordinate(p));
-			vertices.put(key, created);
+			vertices.put(created, created);
 			return created;
 		}
 
-		private long quantize(double v) {
-			return Math.round(v / snapTol);
+		private long quantize(double v, double origin) {
+			return Math.round((v - origin) / snapTol);
 		}
 
-		// simple reversible mix; not a real Morton code, just stable keying
-		private static long interleave(long a, long b) {
-			return (a * 73856093L) ^ (b * 19349663L);
-		}
 	}
-
-	// ---------------------------- Linearization ----------------------------
 
 	private static void appendLinearizedArc(List<Coordinate> out, Arc arc, double maxSegLen) {
 		Disk c = arc.circle;
@@ -702,11 +698,22 @@ public final class DiskUnion {
 			return;
 		}
 
+		// Use snapped endpoints when available to keep rings noded.
+		Coordinate startCoord = arc.start != null ? arc.start.coord : null;
+		Coordinate endCoord = arc.end != null ? arc.end.coord : null;
+
 		// choose segment count so chord <= maxSegLen
 		int n = Math.max(1, (int) Math.ceil((sweep * c.r) / maxSegLen));
 		for (int i = 0; i <= n; i++) {
-			double a = a0 + (sweep * i) / n;
-			Coordinate p = pointOn(c, a);
+			Coordinate p;
+			if (i == 0 && startCoord != null) {
+				p = startCoord;
+			} else if (i == n && endCoord != null) {
+				p = endCoord;
+			} else {
+				double a = a0 + (sweep * i) / n;
+				p = pointOn(c, a);
+			}
 			// avoid duplicating last point from previous arc
 			if (out.isEmpty() || !out.get(out.size() - 1).equals2D(p)) {
 				out.add(p);
@@ -714,8 +721,6 @@ public final class DiskUnion {
 		}
 		// Caller will handle closure and de-dup between arcs
 	}
-
-	// ---------------------------- Misc math ----------------------------
 
 	private static double dist(Coordinate a, Coordinate b) {
 		return a.distance(b);
