@@ -18,7 +18,7 @@ import java.util.stream.Collectors;
  */
 public final class DiskUnion {
 
-	private static final class Disk {
+	static final class Disk {
 		public final int id;
 		public final Coordinate c;
 		public final double r;
@@ -45,7 +45,7 @@ public final class DiskUnion {
 	/**
 	 * A boundary arc of the union, oriented so that union interior is on the left.
 	 */
-	private static final class Arc {
+	static final class Arc {
 		public final Disk circle;
 		/** start angle in [0, 2π) */
 		public final double a0;
@@ -89,7 +89,7 @@ public final class DiskUnion {
 	}
 
 	/** One closed boundary component: a cyclic list of arcs. */
-	private static final class ArcCycle {
+	static final class ArcCycle {
 		public final List<Arc> arcs;
 
 		ArcCycle(List<Arc> arcs) {
@@ -119,7 +119,8 @@ public final class DiskUnion {
 		if (circles.isEmpty())
 			return new ArcBoundary(Collections.emptyList());
 
-		List<Disk> disks = toDisks(circles);
+		List<Coordinate> uniqueCircles = dedupeCircles(circles, eps);
+		List<Disk> disks = toDisks(uniqueCircles);
 
 		// 1) Index circles by envelope
 		var index = new HPRtreeX<Disk>();
@@ -236,13 +237,14 @@ public final class DiskUnion {
 			en.getValue().sort(Comparator.comparingDouble(Arc::tangentAngleAtStart));
 		}
 
+		final int guardLimit = Math.max(10, keptArcs.size() * 4);
 		for (Arc startArc : keptArcs) {
 			if (used.contains(startArc))
 				continue;
 			if (startArc.start == null || startArc.end == null)
 				continue;
 			// Ignore self-loop full circle arcs for stitching; treat as its own cycle
-			if (startArc.a1 - startArc.a0 >= TWO_PI - 1e-12 && startArc.start.equals(startArc.end)) {
+			if (startArc.a1 - startArc.a0 >= TWO_PI - EPS_FULL_CIRCLE && startArc.start.equals(startArc.end)) {
 				used.add(startArc);
 				cycles.add(new ArcCycle(List.of(startArc)));
 				continue;
@@ -254,7 +256,7 @@ public final class DiskUnion {
 
 			int guard = 0;
 			while (true) {
-				if (guard++ > 1_000_000) {
+				if (guard++ > guardLimit) {
 					throw new IllegalStateException("Cycle stitching runaway; check eps/degeneracies.");
 				}
 				if (used.contains(cur)) {
@@ -296,6 +298,27 @@ public final class DiskUnion {
 			out.add(new Disk(i, circles.get(i)));
 		}
 		return out;
+	}
+
+	private static List<Coordinate> dedupeCircles(List<Coordinate> circles, double eps) {
+		if (circles.size() < 2)
+			return circles;
+		double tol = eps <= 0 ? EPS_SNAP_FALLBACK : eps;
+		List<Coordinate> sorted = new ArrayList<>(circles);
+		sorted.sort(Comparator.comparingDouble((Coordinate c) -> c.x).thenComparingDouble(c -> c.y).thenComparingDouble(Coordinate::getZ));
+		List<Coordinate> out = new ArrayList<>(sorted.size());
+		Coordinate prev = null;
+		for (Coordinate c : sorted) {
+			if (prev == null || !nearlySameCircle(prev, c, tol)) {
+				out.add(c);
+				prev = c;
+			}
+		}
+		return out;
+	}
+
+	private static boolean nearlySameCircle(Coordinate a, Coordinate b, double tol) {
+		return Math.abs(a.x - b.x) <= tol && Math.abs(a.y - b.y) <= tol && Math.abs(a.getZ() - b.getZ()) <= tol;
 	}
 
 	/**
@@ -423,7 +446,8 @@ public final class DiskUnion {
 				return true;
 			}
 			double d = dist(self.c, c.c);
-			if (d + self.r <= c.r + eps) {
+			// Require strict containment; coincident circles should not "cover" each other.
+			if (d + self.r <= c.r - eps) {
 				covered[0] = true;
 				return false; // early exit
 			}
@@ -528,6 +552,16 @@ public final class DiskUnion {
 	// ---------------------------- Angle/arc utilities ----------------------------
 
 	private static final double TWO_PI = Math.PI * 2.0;
+	/** Min angular tolerance (rad) for radius-based angle eps. */
+	private static final double EPS_ANGLE_MIN = 1e-12;
+	/** Max angular tolerance (rad) for radius-based angle eps. */
+	private static final double EPS_ANGLE_MAX = 1e-6;
+	/** Angular dedupe tolerance (rad), radius-independent. */
+	private static final double EPS_ANGLE_DEDUP = 1e-12;
+	/** Fallback snap tolerance when eps <= 0. */
+	private static final double EPS_SNAP_FALLBACK = 1e-12;
+	/** Full-circle sweep tolerance (rad). */
+	private static final double EPS_FULL_CIRCLE = 1e-12;
 
 	private static double angleAt(Disk c, Coordinate p) {
 		double a = FastMath.atan2(p.y - c.c.y, p.x - c.c.x);
@@ -553,8 +587,8 @@ public final class DiskUnion {
 	private static double angleEps(double eps, double r) {
 		// angle tolerance corresponding to linear eps on radius r (approx eps/r)
 		if (r <= 0)
-			return 1e-12;
-		return Math.min(1e-6, Math.max(1e-12, eps / r));
+			return EPS_ANGLE_MIN;
+		return Math.min(EPS_ANGLE_MAX, Math.max(EPS_ANGLE_MIN, eps / r));
 	}
 
 	private static List<Double> dedupeAndSortAngles(List<Double> angles, double eps) {
@@ -568,7 +602,7 @@ public final class DiskUnion {
 		// Note: using a fixed tolerance is tricky; this works well in practice when eps
 		// is reasonable.
 		List<Double> out = new ArrayList<>();
-		double tol = 1e-12; // angular tol baseline; we can't infer radius here
+		double tol = EPS_ANGLE_DEDUP; // angular tol baseline; we can't infer radius here
 		double prev = Double.NaN;
 		for (double v : a) {
 			if (out.isEmpty() || Math.abs(v - prev) > tol) {
@@ -590,7 +624,7 @@ public final class DiskUnion {
 
 	// ---------------------------- Snapping nodes ----------------------------
 
-	private static final class SnapVertex {
+	static final class SnapVertex {
 		final long qx, qy; // quantized grid key
 		final Coordinate coord; // representative coordinate
 
@@ -621,7 +655,7 @@ public final class DiskUnion {
 		private final Map<Long, SnapVertex> vertices = new HashMap<>();
 
 		VertexSnapper(double eps) {
-			this.snapTol = eps <= 0 ? 1e-12 : eps;
+			this.snapTol = eps <= 0 ? EPS_SNAP_FALLBACK : eps;
 		}
 
 		SnapVertex node(Coordinate p) {
@@ -657,7 +691,7 @@ public final class DiskUnion {
 			return;
 
 		// If full circle
-		if (sweep >= TWO_PI - 1e-12) {
+		if (sweep >= TWO_PI - EPS_FULL_CIRCLE) {
 			// approximate full circle with N segments
 			int n = Math.max(16, (int) Math.ceil((TWO_PI * c.r) / maxSegLen));
 			for (int i = 0; i < n; i++) {
