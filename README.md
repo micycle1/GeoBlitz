@@ -27,6 +27,10 @@ High-performance polygon union using Hilbert curve ordering and parallel reducti
 - Executes the union as a parallel reduction so many union tasks run concurrently.
 - Discards non-polygonal artifacts; returns clean `Polygon` or `MultiPolygon`.
 
+#### `DiskUnion`
+Fast union of disks/circles by preserving circular arcs in the boundary representation instead of linearizing circles upfront.
+- Significantly faster than polygonizing circles and using JTS `CascadedPolygonUnion`, especially at high circle resolution.
+
 #### `FastVariableBuffer`
 Identical to JTS VariableBuffer but uses HilbertParallelPolygonUnion for faster unioning of buffer components.
 
@@ -87,6 +91,7 @@ Endpoint-only snapping for near-coverage linework (with optional polygon-vertex 
 |---|---|---:|
 | FastConvexHull | ConvexHull | TBD |
 | HilbertParallelPolygonUnion | CascadedPolygonUnion | TBD |
+| DiskUnion | CascadedPolygonUnion | ~30x |
 | HPRtreeX | HPRtree | *provides NN/range/early-exit features* |
 | IndexedLengthIndexedLine | LengthIndexedLine | O(log n) queries vs O(n) scan – large speedups for repeated queries |
 | FastLineIntersector | RobustLineIntersector | ~2x |

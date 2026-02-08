@@ -1,24 +1,57 @@
 package com.github.micycle1.geoblitz;
 
-import org.apache.commons.math3.util.FastMath;
-import org.locationtech.jts.geom.*;
-
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.apache.commons.math3.util.FastMath;
+import org.locationtech.jts.algorithm.Orientation;
+import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.Envelope;
+import org.locationtech.jts.geom.Geometry;
+import org.locationtech.jts.geom.GeometryFactory;
+import org.locationtech.jts.geom.LinearRing;
+import org.locationtech.jts.geom.Point;
+import org.locationtech.jts.geom.Polygon;
+import org.locationtech.jts.operation.relateng.RelateNG;
+import org.locationtech.jts.operation.relateng.RelatePredicate;
+
 /**
- * Computes the union of circular disks by preserving circular arcs rather than
- * linearizing circles upfront.
- * 
+ * Computes the union of circular disks by preserving circular arcs in the
+ * boundary representation instead of linearizing circles upfront.
+ *
  * <p>
- * This approach is significantly faster than creating polygon approximations of
- * each circle and using JTS {@code CascadedPolygonUnion}. By working with exact
- * circular arcs throughout the computation, it avoids expensive polygon
- * operations on high-vertex-count geometries.
+ * This algorithm maintains the exact circular arcs that form the union
+ * boundary, deferring linearization until the final geometry construction. This
+ * approach is significantly faster than polygonizing each circle and using JTS
+ * {@code CascadedPolygonUnion}, particularly when high-fidelity circle
+ * approximations would require many vertices.
+ *
+ * @author Michael Carleton
  */
 public final class DiskUnion {
 
-	static final class Disk {
+	private static final double TWO_PI = Math.PI * 2.0;
+	/** Min angular tolerance (rad) for radius-based angle eps. */
+	private static final double EPS_ANGLE_MIN = 1e-12;
+	/** Max angular tolerance (rad) for radius-based angle eps. */
+	private static final double EPS_ANGLE_MAX = 1e-6;
+	/** Angular dedupe tolerance (rad), radius-independent. */
+	private static final double EPS_ANGLE_DEDUP = 1e-12;
+	/** Fallback snap tolerance when eps <= 0. */
+	private static final double EPS_SNAP_FALLBACK = 1e-12;
+	/** Full-circle sweep tolerance (rad). */
+	private static final double EPS_FULL_CIRCLE = 1e-12;
+
+	/** Immutable disk definition used by this algorithm. */
+	public static final class Disk {
 		/** Stable identifier for this disk. */
 		public final int id;
 		/** Center coordinate (z ignored). */
@@ -30,7 +63,7 @@ public final class DiskUnion {
 		 * @param id     disk identifier
 		 * @param circle coordinate where {@code x,y} are center and {@code z} is radius
 		 */
-		public Disk(int id, Coordinate circle) {
+		Disk(int id, Coordinate circle) {
 			this.id = id;
 			Objects.requireNonNull(circle, "circle");
 			this.c = new Coordinate(circle.x, circle.y);
@@ -46,14 +79,14 @@ public final class DiskUnion {
 	}
 
 	/**
-	 * A boundary arc of the union, oriented so that union interior is on the left.
+	 * A boundary arc of the union, oriented so the union interior is on the left.
 	 */
-	static final class Arc {
+	public static final class Arc {
 		/** Disk that this arc lies on. */
 		public final Disk circle;
-		/** start angle in [0, 2π) */
+		/** Start angle in [0, 2*pi). */
 		public final double a0;
-		/** end angle in (a0, a0+2π], i.e., CCW from a0 to a1 */
+		/** End angle in (a0, a0+2*pi], i.e., CCW from a0 to a1. */
 		public final double a1;
 
 		// Filled after snapping:
@@ -93,7 +126,7 @@ public final class DiskUnion {
 	}
 
 	/** One closed boundary component: a cyclic list of arcs. */
-	static final class ArcCycle {
+	public static final class ArcCycle {
 		/** Arcs in CCW order forming a closed cycle. */
 		public final List<Arc> arcs;
 
@@ -102,7 +135,7 @@ public final class DiskUnion {
 		}
 	}
 
-	/** Result: boundary as arc-cycles (outer shells + holes). */
+	/** Result: boundary as arc cycles (outer shells + holes). */
 	public static final class ArcBoundary {
 		/** Closed boundary cycles (outer shells and holes). */
 		public final List<ArcCycle> cycles;
@@ -113,17 +146,83 @@ public final class DiskUnion {
 	}
 
 	/**
-	 * Compute union boundary as circular arcs.
+	 * Computes the union of the given circles and linearizes the result to a
+	 * {@code Geometry}.
+	 *
+	 * <p>
+	 * Circles are specified as {@link Coordinate} objects where {@code x} and
+	 * {@code y} define the center point and {@code z} defines the radius. The
+	 * algorithm computes the exact arc boundary of the union, then approximates it
+	 * with linear segments.
+	 *
+	 * <p>
+	 * The {@code maxSegmentLength} parameter controls the linearization fidelity.
+	 * Smaller values produce smoother approximations at the cost of more vertices.
+	 * For a circle of radius {@code r}, approximately
+	 * {@code 2πr / maxSegmentLength} segments will be used per full circle.
+	 *
+	 * <p>
+	 * This overload uses a default geometric tolerance of {@code 1e-9}. For
+	 * coordinate systems with unusual magnitude, use
+	 * {@link #union(List, double, double)} to specify an appropriate tolerance.
+	 *
+	 * @param circles          list of circles as Coordinates ({@code x,y} = center,
+	 *                         {@code z} = radius)
+	 * @param maxSegmentLength maximum chord length for linearized arc segments
+	 * @return {@code Geometry} (Polygon or MultiPolygon) representing the union
+	 * @throws IllegalArgumentException if any circle has NaN radius
+	 */
+	public static Geometry union(List<Coordinate> circles, double maxSegmentLength) {
+		return union(circles, maxSegmentLength, 1e-9);
+	}
+
+	/**
+	 * Computes the union of the given circles with specified geometric tolerance.
+	 *
+	 * <p>
+	 * This variant allows explicit control over the geometric tolerance
+	 * {@code eps}, which governs coordinate snapping, duplicate circle detection,
+	 * and intersection point deduplication. The tolerance should be chosen relative
+	 * to the coordinate system magnitude and desired precision.
+	 *
+	 * <p>
+	 * The {@code eps} parameter affects:
+	 * <ul>
+	 * <li>Vertex snapping: points within {@code eps} are merged to a single
+	 * node</li>
+	 * <li>Circle deduplication: circles with centers and radii within {@code eps}
+	 * are treated as identical</li>
+	 * <li>Intersection detection: used as a numerical threshold in circle-circle
+	 * relation tests</li>
+	 * </ul>
+	 *
+	 * @param circles          list of circles as Coordinates ({@code x,y} = center,
+	 *                         {@code z} = radius)
+	 * @param maxSegmentLength maximum chord length for linearized arc segments
+	 * @param eps              geometric tolerance for snapping and intersection
+	 *                         detection (typically 1e-9 to 1e-6)
+	 * @return {@code Geometry} (Polygon or MultiPolygon) representing the union
+	 * @throws IllegalArgumentException if any circle has NaN radius
+	 */
+	public static Geometry union(List<Coordinate> circles, double maxSegmentLength, double eps) {
+		ArcBoundary boundary = computeBoundaryArcs(circles, eps);
+		GeometryFactory gf = new GeometryFactory();
+		return toGeometry(boundary, gf, maxSegmentLength);
+	}
+
+	/**
+	 * Computes the union boundary as circular arcs.
 	 *
 	 * @param circles input circles as Coordinates ({@code x,y} center and {@code z}
 	 *                radius)
 	 * @param eps     geometric tolerance for snapping / dedup, in world units
 	 *                (e.g., 1e-9..1e-6)
 	 */
-	public static ArcBoundary computeBoundaryArcs(List<Coordinate> circles, double eps) {
+	static ArcBoundary computeBoundaryArcs(List<Coordinate> circles, double eps) {
 		Objects.requireNonNull(circles, "circles");
-		if (circles.isEmpty())
+		if (circles.isEmpty()) {
 			return new ArcBoundary(Collections.emptyList());
+		}
 
 		List<Coordinate> uniqueCircles = dedupeCircles(circles, eps);
 		List<Disk> disks = toDisks(uniqueCircles);
@@ -139,12 +238,12 @@ public final class DiskUnion {
 
 		// 2) For each circle, gather intersection angles
 		Map<Integer, List<Double>> anglesByCircle = new HashMap<>();
-		for (Disk c : disks)
+		for (Disk c : disks) {
 			anglesByCircle.put(c.id, new ArrayList<>());
+		}
 
-		// Also track "definitely contained" circles (fully covered by a single other
-		// disk)
-		Set<Integer> contained = new HashSet<>();
+		// "definitely contained" circles (fully covered by a single other disk)
+		boolean[] contained = new boolean[disks.size()];
 
 		// Pair generation using tree pruning:
 		// For each circle i, only consider candidate j with j.id > i.id to avoid
@@ -155,23 +254,28 @@ public final class DiskUnion {
 		for (Disk ci : sorted) {
 			List<Disk> candidates = index.query(ci.envelope());
 			for (Disk cj : candidates) {
-				if (cj.id <= ci.id)
+				if (cj.id <= ci.id) {
 					continue;
+				}
 				// quick bbox prune already done; now do actual circle relation
 				CircleRelation rel = circleCircleRelation(ci, cj, eps);
-				if (rel.type == RelationType.DISJOINT)
+				if (rel.type == RelationType.DISJOINT) {
 					continue;
+				}
 
-				if (rel.type == RelationType.A_INSIDE)
-					contained.add(ci.id);
-				if (rel.type == RelationType.B_INSIDE)
-					contained.add(cj.id);
+				if (rel.type == RelationType.A_INSIDE) {
+					contained[ci.id] = true;
+				}
+				if (rel.type == RelationType.B_INSIDE) {
+					contained[cj.id] = true;
+				}
 
 				if (rel.type == RelationType.SECANT || rel.type == RelationType.TANGENT) {
 					// For tangency we still add the same angle once (dedupe later)
 					for (Coordinate p : rel.points) {
-						if (p == null)
+						if (p == null) {
 							continue;
+						}
 						double ai = angleAt(ci, p);
 						double aj = angleAt(cj, p);
 						anglesByCircle.get(ci.id).add(ai);
@@ -185,7 +289,7 @@ public final class DiskUnion {
 		List<Arc> keptArcs = new ArrayList<>();
 
 		for (Disk c : sorted) {
-			if (contained.contains(c.id)) {
+			if (contained[c.id]) {
 				// Contained circles cannot contribute to boundary.
 				continue;
 			}
@@ -206,8 +310,9 @@ public final class DiskUnion {
 			for (int k = 0; k < angles.size(); k++) {
 				double a0 = angles.get(k);
 				double a1 = (k + 1 < angles.size()) ? angles.get(k + 1) : (angles.get(0) + TWO_PI);
-				if (a1 <= a0 + angleEps(eps, c.r))
+				if (a1 <= a0 + angleEps(eps, c.r)) {
 					continue; // degenerate
+				}
 
 				Arc arc = new Arc(c, a0, a1);
 
@@ -237,18 +342,16 @@ public final class DiskUnion {
 		Set<Arc> used = Collections.newSetFromMap(new IdentityHashMap<>());
 		List<ArcCycle> cycles = new ArrayList<>();
 
-		// Optional: sort outgoing arcs at each node by start tangent angle for faster
-		// selection
+		// sort outgoing arcs at each node by start tangent angle for faster selection
 		for (Map.Entry<SnapVertex, List<Arc>> en : outgoing.entrySet()) {
 			en.getValue().sort(Comparator.comparingDouble(Arc::tangentAngleAtStart));
 		}
 
 		final int guardLimit = Math.max(10, keptArcs.size() * 4);
 		for (Arc startArc : keptArcs) {
-			if (used.contains(startArc))
+			if (used.contains(startArc) || startArc.start == null || startArc.end == null) {
 				continue;
-			if (startArc.start == null || startArc.end == null)
-				continue;
+			}
 			// Ignore self-loop full circle arcs for stitching; treat as its own cycle
 			if (startArc.a1 - startArc.a0 >= TWO_PI - EPS_FULL_CIRCLE && startArc.start.equals(startArc.end)) {
 				used.add(startArc);
@@ -280,7 +383,7 @@ public final class DiskUnion {
 
 				List<Arc> outs = outgoing.getOrDefault(at, List.of());
 				if (outs.isEmpty()) {
-					// Open chain (shouldn't happen for clean union boundary); abandon.
+					// Open chain (shouldn't happen for clean union boundary) - abandon
 					break;
 				}
 
@@ -288,7 +391,7 @@ public final class DiskUnion {
 				Arc next = chooseNextArc(incomingDir, outs, used);
 
 				if (next == null) {
-					// No unused continuation; abandon.
+					// No unused continuation - abandon.
 					break;
 				}
 				cur = next;
@@ -307,8 +410,9 @@ public final class DiskUnion {
 	}
 
 	private static List<Coordinate> dedupeCircles(List<Coordinate> circles, double eps) {
-		if (circles.size() < 2)
+		if (circles.size() < 2) {
 			return circles;
+		}
 		double tol = eps <= 0 ? EPS_SNAP_FALLBACK : eps;
 		List<Coordinate> sorted = new ArrayList<>(circles);
 		sorted.sort(Comparator.comparingDouble((Coordinate c) -> c.x).thenComparingDouble(c -> c.y).thenComparingDouble(Coordinate::getZ));
@@ -328,26 +432,27 @@ public final class DiskUnion {
 	}
 
 	/**
-	 * Optional: linearize arc cycles to a Geometry (MultiPolygon) with only final
-	 * approximation. This is a lightweight conversion; depending on data, you may
-	 * want more robust ring nesting.
+	 * Linearize arc cycles to a Geometry (MultiPolygon) with only final
+	 * approximation.
 	 */
-	public static Geometry toJtsGeometry(ArcBoundary boundary, GeometryFactory gf, double maxSegmentLength) {
+	static Geometry toGeometry(ArcBoundary boundary, GeometryFactory gf, double maxSegmentLength) {
 		List<LinearRing> rings = new ArrayList<>();
 		for (ArcCycle cy : boundary.cycles) {
 			List<Coordinate> coords = new ArrayList<>();
 			for (Arc a : cy.arcs) {
 				appendLinearizedArc(coords, a, maxSegmentLength);
 			}
-			// Close ring
-			if (coords.isEmpty())
+			if (coords.isEmpty()) {
 				continue;
+			}
+			// Close ring
 			if (!coords.get(0).equals2D(coords.get(coords.size() - 1))) {
 				coords.add(new Coordinate(coords.get(0)));
 			}
 			// Need at least 4 coords for a LinearRing (closed triangle)
-			if (coords.size() < 4)
+			if (coords.size() < 4) {
 				continue;
+			}
 			rings.add(gf.createLinearRing(coords.toArray(new Coordinate[0])));
 		}
 
@@ -355,49 +460,63 @@ public final class DiskUnion {
 		List<LinearRing> shells = new ArrayList<>();
 		List<LinearRing> holes = new ArrayList<>();
 		for (LinearRing r : rings) {
-			double a = signedArea(r.getCoordinates());
-			if (a >= 0)
+			boolean shell = Orientation.isCCWArea(r.getCoordinates());
+			if (shell) {
 				shells.add(r);
-			else
+			} else {
 				holes.add(r);
+			}
 		}
 
-		// Naive nesting: assign each hole to the smallest shell that contains its
-		// centroid.
-		// For complicated cases, use a more robust nesting algorithm.
+		// NOTE Naive nesting: assign each hole to the smallest shell that contains its
+		// centroid. Might want a more robust nesting algorithm.
 		List<Polygon> polys = new ArrayList<>();
 		List<List<LinearRing>> holesByShell = new ArrayList<>();
-		for (int i = 0; i < shells.size(); i++)
+		for (int i = 0; i < shells.size(); i++) {
 			holesByShell.add(new ArrayList<>());
+		}
+
+		List<Polygon> shellPolys = new ArrayList<>(shells.size());
+		List<RelateNG> shellRelates = new ArrayList<>(shells.size());
+		double[] shellAreas = new double[shells.size()];
+		for (int i = 0; i < shells.size(); i++) {
+			Polygon shellPoly = gf.createPolygon(shells.get(i));
+			shellPolys.add(shellPoly);
+			shellRelates.add(RelateNG.prepare(shellPoly));
+			shellAreas[i] = Math.abs(shellPoly.getArea());
+		}
 
 		for (LinearRing h : holes) {
-			Point hp = gf.createPoint(h.getCentroid().getCoordinate());
+			Point hp = gf.createPoint(h.getInteriorPoint().getCoordinate());
 			int bestShell = -1;
 			double bestArea = Double.POSITIVE_INFINITY;
 			for (int i = 0; i < shells.size(); i++) {
-				Polygon shellPoly = gf.createPolygon(shells.get(i));
-				if (shellPoly.contains(hp)) { // TODO speed up
-					double area = Math.abs(shellPoly.getArea());
-					if (area < bestArea) {
-						bestArea = area;
-						bestShell = i;
-					}
+				if (!shellRelates.get(i).evaluate(hp, RelatePredicate.contains())) {
+					continue;
+				}
+				double area = shellAreas[i];
+				if (area < bestArea) {
+					bestArea = area;
+					bestShell = i;
 				}
 			}
-			if (bestShell >= 0)
+			if (bestShell >= 0) {
 				holesByShell.get(bestShell).add(h);
+			}
 		}
 
 		for (int i = 0; i < shells.size(); i++) {
-			LinearRing shell = shells.get(i);
+			Polygon shellPoly = shellPolys.get(i);
 			LinearRing[] hs = holesByShell.get(i).toArray(new LinearRing[0]);
-			polys.add(gf.createPolygon(shell, hs));
+			polys.add(gf.createPolygon(shellPoly.getExteriorRing(), hs));
 		}
 
-		if (polys.isEmpty())
+		if (polys.isEmpty()) {
 			return gf.createGeometryCollection();
-		if (polys.size() == 1)
+		}
+		if (polys.size() == 1) {
 			return polys.get(0);
+		}
 		return gf.createMultiPolygon(polys.toArray(new Polygon[0]));
 	}
 
@@ -408,8 +527,9 @@ public final class DiskUnion {
 		// Choose unused outgoing arc that makes the smallest CCW turn from incomingDir
 		// (keeps face interior to the left in typical DCEL "next edge" rule).
 		for (Arc cand : outs) {
-			if (used.contains(cand))
+			if (used.contains(cand)) {
 				continue;
+			}
 			double outDir = cand.tangentAngleAtStart();
 			double delta = normalizeAngleTo2Pi(outDir - incomingDir);
 			if (delta < bestDelta) {
@@ -497,26 +617,30 @@ public final class DiskUnion {
 
 		// Coincident centers
 		if (d <= eps) {
-			if (Math.abs(ra - rb) <= eps)
+			if (Math.abs(ra - rb) <= eps) {
 				return new CircleRelation(RelationType.COINCIDENT, null, null);
+			}
 			// One contains the other (no boundary intersections)
-			if (ra < rb)
+			if (ra < rb) {
 				return new CircleRelation(RelationType.A_INSIDE, null, null);
-			else
+			} else {
 				return new CircleRelation(RelationType.B_INSIDE, null, null);
+			}
 		}
 
 		// Containment without intersection
 		if (d + Math.min(ra, rb) < Math.max(ra, rb) - eps) {
-			if (ra < rb)
+			if (ra < rb) {
 				return new CircleRelation(RelationType.A_INSIDE, null, null);
-			else
+			} else {
 				return new CircleRelation(RelationType.B_INSIDE, null, null);
+			}
 		}
 
 		// Too far apart
-		if (d > ra + rb + eps)
+		if (d > ra + rb + eps) {
 			return CircleRelation.disjoint();
+		}
 
 		// Compute intersections (including tangency)
 		// Using standard formula for two circles.
@@ -524,8 +648,9 @@ public final class DiskUnion {
 		double h2 = ra * ra - aLen * aLen;
 
 		// Numerical clamp
-		if (h2 < 0 && h2 > -eps * eps)
+		if (h2 < 0 && h2 > -eps * eps) {
 			h2 = 0;
+		}
 
 		if (h2 < 0) {
 			// No real intersections (should be disjoint or contained; treat as disjoint)
@@ -549,18 +674,6 @@ public final class DiskUnion {
 		return new CircleRelation(RelationType.SECANT, p1, p2);
 	}
 
-	private static final double TWO_PI = Math.PI * 2.0;
-	/** Min angular tolerance (rad) for radius-based angle eps. */
-	private static final double EPS_ANGLE_MIN = 1e-12;
-	/** Max angular tolerance (rad) for radius-based angle eps. */
-	private static final double EPS_ANGLE_MAX = 1e-6;
-	/** Angular dedupe tolerance (rad), radius-independent. */
-	private static final double EPS_ANGLE_DEDUP = 1e-12;
-	/** Fallback snap tolerance when eps <= 0. */
-	private static final double EPS_SNAP_FALLBACK = 1e-12;
-	/** Full-circle sweep tolerance (rad). */
-	private static final double EPS_FULL_CIRCLE = 1e-12;
-
 	private static double angleAt(Disk c, Coordinate p) {
 		double a = FastMath.atan2(p.y - c.c.y, p.x - c.c.x);
 		return normalizeAngleTo2Pi(a);
@@ -577,21 +690,24 @@ public final class DiskUnion {
 
 	private static double normalizeAngleTo2Pi(double a) {
 		double x = a % TWO_PI;
-		if (x < 0)
+		if (x < 0) {
 			x += TWO_PI;
+		}
 		return x;
 	}
 
 	private static double angleEps(double eps, double r) {
 		// angle tolerance corresponding to linear eps on radius r (approx eps/r)
-		if (r <= 0)
+		if (r <= 0) {
 			return EPS_ANGLE_MIN;
+		}
 		return Math.min(EPS_ANGLE_MAX, Math.max(EPS_ANGLE_MIN, eps / r));
 	}
 
 	private static List<Double> dedupeAndSortAngles(List<Double> angles, double eps) {
-		if (angles.isEmpty())
+		if (angles.isEmpty()) {
 			return angles;
+		}
 
 		// Normalize & sort
 		List<Double> a = angles.stream().map(DiskUnion::normalizeAngleTo2Pi).sorted().collect(Collectors.toCollection(ArrayList::new));
@@ -632,10 +748,12 @@ public final class DiskUnion {
 
 		@Override
 		public boolean equals(Object o) {
-			if (this == o)
+			if (this == o) {
 				return true;
-			if (!(o instanceof SnapVertex))
+			}
+			if (!(o instanceof SnapVertex)) {
 				return false;
+			}
 			SnapVertex n = (SnapVertex) o;
 			return qx == n.qx && qy == n.qy;
 		}
@@ -647,26 +765,33 @@ public final class DiskUnion {
 	}
 
 	private static final class VertexSnapper {
-		private final double snapTol;
+		private final double baseSnapTol;
+		private double snapTol;
 		private final Map<SnapVertex, SnapVertex> vertices = new HashMap<>();
 		private Double originX;
 		private Double originY;
 
 		VertexSnapper(double eps) {
-			this.snapTol = eps <= 0 ? EPS_SNAP_FALLBACK : eps;
+			this.baseSnapTol = eps <= 0 ? EPS_SNAP_FALLBACK : eps;
+			this.snapTol = this.baseSnapTol;
 		}
 
 		SnapVertex node(Coordinate p) {
 			if (originX == null) {
 				originX = p.x;
 				originY = p.y;
+				// Ensure snap tolerance is not smaller than local floating-point resolution
+				// for large coordinates (prevents false non-snaps at big magnitudes).
+				double ulp = Math.max(Math.ulp(originX), Math.ulp(originY));
+				snapTol = Math.max(baseSnapTol, ulp * 8.0);
 			}
 			long qx = quantize(p.x, originX);
 			long qy = quantize(p.y, originY);
 			SnapVertex key = new SnapVertex(qx, qy, null);
 			SnapVertex n = vertices.get(key);
-			if (n != null)
+			if (n != null) {
 				return n;
+			}
 			SnapVertex created = new SnapVertex(qx, qy, new Coordinate(p));
 			vertices.put(created, created);
 			return created;
@@ -683,8 +808,9 @@ public final class DiskUnion {
 		double a0 = arc.a0;
 		double a1 = arc.a1;
 		double sweep = a1 - a0;
-		if (sweep <= 0)
+		if (sweep <= 0) {
 			return;
+		}
 
 		// If full circle
 		if (sweep >= TWO_PI - EPS_FULL_CIRCLE) {
@@ -724,16 +850,5 @@ public final class DiskUnion {
 
 	private static double dist(Coordinate a, Coordinate b) {
 		return a.distance(b);
-	}
-
-	private static double signedArea(Coordinate[] ring) {
-		// Shoelace; assumes ring closed or not—works either way
-		double s = 0;
-		for (int i = 0; i < ring.length - 1; i++) {
-			Coordinate p = ring[i];
-			Coordinate q = ring[i + 1];
-			s += (p.x * q.y - q.x * p.y);
-		}
-		return 0.5 * s;
 	}
 }
