@@ -31,6 +31,11 @@ High-performance polygon union using Hilbert curve ordering and parallel reducti
 Fast union of disks/circles by preserving circular arcs in the boundary representation instead of linearizing circles upfront.
 - Significantly faster than polygonizing circles and using JTS `CascadedPolygonUnion`, especially at high circle resolution.
 
+#### `CircleIndex`
+A spatial index for circles that supports fast incremental insertion and nearest-circle queries.
+- Internally uses a specialised cover tree with the metric `d(c1, c2) = hypot(dx, dy) + |dr|`.
+- Designed for workloads where circles are added dynamically and queried frequently (e.g., stochastic circle packing or geometric sampling).
+
 #### `FastVariableBuffer`
 Identical to JTS VariableBuffer but uses HilbertParallelPolygonUnion for faster unioning of buffer components.
 
