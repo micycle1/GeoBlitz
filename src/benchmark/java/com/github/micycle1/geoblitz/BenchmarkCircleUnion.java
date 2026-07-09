@@ -32,7 +32,7 @@ import org.openjdk.jmh.infra.Blackhole;
 @Warmup(iterations = 2, time = 2)
 @Measurement(iterations = 2, time = 5)
 @Fork(value = 1, jvmArgsAppend = { "-Xms1g", "-Xmx1g", "-XX:+AlwaysPreTouch" })
-public class BenchmarkDiskUnion {
+public class BenchmarkCircleUnion {
 
 	private static final long SEED = 42L;
 	private static final Envelope EXTENT = new Envelope(0, 1000, 0, 1000);
@@ -50,9 +50,6 @@ public class BenchmarkDiskUnion {
 
 	@Param({ "1.0" })
 	public double maxSegmentLength;
-
-	@Param({ "1e-9" })
-	public double eps;
 
 	@Setup(Level.Trial)
 	public void setup() {
@@ -77,18 +74,24 @@ public class BenchmarkDiskUnion {
 		}
 
 		List<Coordinate> warmupCircles = circles.subList(0, Math.min(circles.size(), 16));
-		var warmupBoundary = DiskUnion.computeBoundaryArcs(warmupCircles, eps);
-		DiskUnion.toGeometry(warmupBoundary, gf, maxSegmentLength);
+
+		CircleUnion warmupCu = new CircleUnion(warmupCircles.size());
+		for (Coordinate c : warmupCircles) {
+			warmupCu.add(c.x, c.y, c.getZ());
+		}
+		warmupCu.geometry(gf, maxSegmentLength);
 
 		List<Geometry> warmupPolys = new ArrayList<>(circlePolygons.subList(0, Math.min(circlePolygons.size(), 16)));
 		CascadedPolygonUnion.union(warmupPolys);
 	}
 
 	@Benchmark
-	public void testDiskUnion(Blackhole bh) {
-		DiskUnion.ArcBoundary boundary = DiskUnion.computeBoundaryArcs(circles, eps);
-		Geometry result = DiskUnion.toGeometry(boundary, gf, maxSegmentLength);
-		bh.consume(result);
+	public void testCircleUnion(Blackhole bh) {
+		CircleUnion cu = new CircleUnion(circles.size());
+		for (Coordinate c : circles) {
+			cu.add(c.x, c.y, c.getZ());
+		}
+		bh.consume(cu.geometry(gf, maxSegmentLength));
 	}
 
 	@Benchmark

@@ -27,9 +27,10 @@ High-performance polygon union using Hilbert curve ordering and parallel reducti
 - Executes the union as a parallel reduction so many union tasks run concurrently.
 - Discards non-polygonal artifacts; returns clean `Polygon` or `MultiPolygon`.
 
-#### `DiskUnion`
+#### `CircleUnion`
 Fast union of disks/circles by preserving circular arcs in the boundary representation instead of linearizing circles upfront.
 - Significantly faster than polygonizing circles and using JTS `CascadedPolygonUnion`, especially at high circle resolution.
+- A planar (Euclidean) port of Volodymyr Agafonkin's [circle-union](https://github.com/mourner/circle-union), which operates on geodesic disks on a sphere.
 
 #### `CircleIndex`
 A spatial index for circles that supports fast incremental insertion and nearest-circle queries.
@@ -96,7 +97,7 @@ Endpoint-only snapping for near-coverage linework (with optional polygon-vertex 
 |---|---|---:|
 | FastConvexHull | ConvexHull | TBD |
 | HilbertParallelPolygonUnion | CascadedPolygonUnion | TBD |
-| DiskUnion | CascadedPolygonUnion | ~30x |
+| CircleUnion | CascadedPolygonUnion | ~30x |
 | HPRtreeX | HPRtree | *provides NN/range/early-exit features* |
 | IndexedLengthIndexedLine | LengthIndexedLine | O(log n) queries vs O(n) scan – large speedups for repeated queries |
 | FastLineIntersector | RobustLineIntersector | ~2x |
