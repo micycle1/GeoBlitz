@@ -280,6 +280,90 @@ public final class CircleIndex<T> {
 	}
 
 	/**
+	 * Callback for {@link #query(double, double, double, double, CircleVisitor)}.
+	 *
+	 * @param <T> stored value type
+	 */
+	@FunctionalInterface
+	public interface CircleVisitor<T> {
+		/**
+		 * Called once per circle whose metric distance to the query satisfies the
+		 * threshold.
+		 *
+		 * @param x     circle center x-coordinate
+		 * @param y     circle center y-coordinate
+		 * @param r     circle radius
+		 * @param value the circle's stored value
+		 * @return {@code false} to stop the traversal early; {@code true} to continue
+		 */
+		boolean visit(double x, double y, double r, T value);
+	}
+
+	/**
+	 * Visits every stored circle whose metric distance to the query point is at
+	 * most {@code limitMetric}, in unspecified order.
+	 * <p>
+	 * This is the enumerating counterpart to {@link #existsWithinMetric}, which
+	 * only reports whether a match exists; here every match is reported to
+	 * {@code visitor}. See {@link #existsWithinMetric} for the meaning of
+	 * {@code R} and {@code limitMetric}, including the requirement that
+	 * {@code R} be an upper bound on every stored circle's radius for correct
+	 * pruning.
+	 *
+	 * @param qx          query point x-coordinate
+	 * @param qy          query point y-coordinate
+	 * @param R           query embedding radius, typically {@link #maxRadius()}
+	 * @param limitMetric inclusive metric-distance threshold
+	 * @param visitor     callback invoked once per matching circle; may return
+	 *                    {@code false} to stop the traversal early
+	 */
+	public void query(double qx, double qy, double R, double limitMetric, CircleVisitor<T> visitor) {
+		if (root == null) {
+			return;
+		}
+
+		ensureStack();
+
+		int sp = 0;
+		stack[sp++] = root;
+
+		while (sp != 0) {
+			Node<T> p = stack[--sp];
+
+			double rhs = limitMetric - queryOffset(R, p);
+			if (rhs >= 0) {
+				double dx = qx - p.x, dy = qy - p.y;
+				double d2 = dx * dx + dy * dy;
+				if (d2 <= rhs * rhs) {
+					if (!visitor.visit(p.x, p.y, p.r, p.value)) {
+						return;
+					}
+				}
+			}
+
+			if (!p.hasChildren()) {
+				continue;
+			}
+
+			for (int i = 0; i < p.nChildren; i++) {
+				Node<T> c = p.children[i];
+				double bound = limitMetric + c.maxDist - queryOffset(R, c);
+				if (bound <= 0) {
+					continue; // impossible
+				}
+				double dx = qx - c.x, dy = qy - c.y;
+				double d2 = dx * dx + dy * dy;
+				if (d2 <= bound * bound) {
+					stack[sp++] = c;
+					if (sp == stack.length) {
+						growStack();
+					}
+				}
+			}
+		}
+	}
+
+	/**
 	 * Finds the stored circle with minimum clearance to the query point.
 	 * <p>
 	 * Clearance is {@code hypot(q - center) - radius}, so negative values mean the
