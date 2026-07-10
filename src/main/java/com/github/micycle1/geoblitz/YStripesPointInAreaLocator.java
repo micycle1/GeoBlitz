@@ -31,7 +31,6 @@ public final class YStripesPointInAreaLocator implements PointOnGeometryLocator 
 	private final Envelope env;
 	private final PointOnGeometryLocator single;
 	private final HPRtreeX<PointOnGeometryLocator> tree;
-	private Envelope qEnv = new Envelope(0, 0, 0, 0);
 
 	/**
 	 * Creates a new locator for the given geometry.
@@ -96,8 +95,7 @@ public final class YStripesPointInAreaLocator implements PointOnGeometryLocator 
 		}
 
 		// tree candidate lookup
-		qEnv.init(p);
-		List<PointOnGeometryLocator> cands = tree.query(qEnv);
+		List<PointOnGeometryLocator> cands = tree.query(new Envelope(p));
 
 		if (cands.isEmpty()) {
 			return Location.EXTERIOR;

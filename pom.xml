@@ -4,7 +4,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>com.github.micycle1</groupId>
 	<artifactId>geoblitz</artifactId>
-	<version>0.9.8</version>
+	<version>0.9.9</version>
 	<name>GeoBlitz</name>
 
 	<properties>
@@ -136,9 +136,9 @@
 				<configuration>
 					<source>17</source>
 					<target>17</target>
-					<benchmarks>com.github.micycle1.geoblitz.BenchmarkCircleUnion</benchmarks>
+					<benchmarks>com.github.micycle1.geoblitz.BenchmarkPreparedPolygon</benchmarks>
 					<warmupIterations>1</warmupIterations>
-					<warmupForks>0</warmupForks>
+					<warmupForks>1</warmupForks>
 					<iterations>1</iterations>
 					<fork>1</fork>
 					<threads>1</threads>
