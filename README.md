@@ -64,6 +64,12 @@ Approximate nearest-segment index built from Voronoi cells of sampled points alo
 - Builds a Voronoi diagram from samples and unions cells belonging to the same segment.
 - Answers nearest-segment queries via point-in-cell tests using `YStripesPointInAreaLocator`.
 
+#### `FastPreparedPolygon`
+A drop-in replacement for JTS `PreparedPolygon` with faster spatial predicates (`intersects`, `contains`, `covers`, `containsProperly`, etc.).
+- Reuses the battle-tested JTS prepared-predicate logic, but swaps in `YStripesPointInAreaLocator` for point-in-area tests and an HPR-tree-based segment intersector for boundary tests.
+- Indexes are built eagerly, so instances are immediately safe for concurrent read-only queries and avoid the per-call `synchronized` lazy initialization of the JTS class.
+- `FastPreparedPolygon.prepare(Geometry)` mirrors `PreparedGeometryFactory.prepare()`, falling back to JTS for non-polygonal inputs.
+
 #### `YStripesPointInAreaLocator`
 Fast point-in-area locator using per-polygon Y-stripe indexes and an HPR-tree for candidate selection.
 - Single-polygon fast path; HPR-tree of per-polygon locators for multi-polygons.
@@ -103,6 +109,7 @@ Endpoint-only snapping for near-coverage linework (with optional polygon-vertex 
 | FastLineIntersector | RobustLineIntersector | ~2x |
 | SegmentVoronoiIndex | IndexedFacetDistance | ~4x (dataset & sampling dependent) |
 | YStripesPointInAreaLocator | IndexedPointInAreaLocator | ~4x |
+| FastPreparedPolygon | PreparedPolygon / RelateNG.prepare() | ~1.5–4x (predicate, geometry & size dependent) |
 | ProHausdorffDistance | DiscreteHausdorffDistance | 10x+ |
 | PointDistanceIndex | IndexedFacetDistance | ~2x |
 
