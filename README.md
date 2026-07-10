@@ -96,7 +96,7 @@ Endpoint-only snapping for near-coverage linework (with optional polygon-vertex 
 | GeoBlitz Class | JTS Counterpart | Speedup |
 |---|---|---:|
 | FastConvexHull | ConvexHull | TBD |
-| HilbertParallelPolygonUnion | CascadedPolygonUnion | TBD |
+| HilbertParallelPolygonUnion | CascadedPolygonUnion | ~10x |
 | CircleUnion | CascadedPolygonUnion | ~30x |
 | HPRtreeX | HPRtree | *provides NN/range/early-exit features* |
 | IndexedLengthIndexedLine | LengthIndexedLine | O(log n) queries vs O(n) scan – large speedups for repeated queries |
